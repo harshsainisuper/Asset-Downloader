@@ -11,13 +11,18 @@ Security notes:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import copy
 import functools
+import importlib.metadata
 import logging
+import os
 import re
 import shutil
+import tempfile
 import threading
 import time
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -60,6 +65,7 @@ class YtDlpProvider(MediaProvider):
         self._executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="ytdlp")
         self._info_cache: dict[str, tuple[float, VideoInfo]] = {}
         self._cache_lock = threading.Lock()
+        self._cookie_dir = settings.temp_dir / "cookies"
 
     # ------------------------------------------------------------------ options
 
@@ -86,7 +92,45 @@ class YtDlpProvider(MediaProvider):
         }
         if self.settings.ffmpeg_binary:
             opts["ffmpeg_location"] = self.settings.ffmpeg_binary
+        if self.settings.ytdlp_proxy:
+            opts["proxy"] = self.settings.ytdlp_proxy
+        extractor_args: dict[str, dict[str, list[str]]] = {}
+        clients = [c.strip() for c in self.settings.ytdlp_player_clients.split(",") if c.strip()]
+        if clients:
+            extractor_args["youtube"] = {"player_client": clients}
+        if self.settings.pot_provider == "bgutil":
+            extractor_args["youtubepot-bgutilhttp"] = {"base_url": [self.settings.bgutil_base_url]}
+        if extractor_args:
+            opts["extractor_args"] = extractor_args
         return opts
+
+    @property
+    def cookies_path(self) -> Path | None:
+        path = Path(self.settings.ytdlp_cookies_file) if self.settings.ytdlp_cookies_file else None
+        return path if path and path.is_file() and os.access(path, os.R_OK) else None
+
+    @contextlib.contextmanager
+    def _ydl(self, extra: dict[str, Any] | None = None) -> Iterator[yt_dlp.YoutubeDL]:
+        opts = self._base_opts() | (extra or {})
+        cookie_copy: Path | None = None
+        if self.cookies_path:
+            # yt-dlp rewrites its cookie file on exit. Give every instance a private copy:
+            # the original may be read-only (Render Secret Files) and jobs run concurrently.
+            try:
+                self._cookie_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+                fd, name = tempfile.mkstemp(prefix="cookies-", suffix=".txt", dir=self._cookie_dir)
+                os.close(fd)
+                cookie_copy = Path(name)
+                shutil.copyfile(self.cookies_path, name)
+                opts["cookiefile"] = name
+            except OSError as exc:
+                log.error("could not use YTDLP_COOKIES_FILE (%s); continuing without cookies", exc)
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                yield ydl
+        finally:
+            if cookie_copy:
+                cookie_copy.unlink(missing_ok=True)
 
     async def _run(self, fn, timeout: float | None = None):
         loop = asyncio.get_running_loop()
@@ -117,7 +161,7 @@ class YtDlpProvider(MediaProvider):
 
     async def _extract_raw(self, ref: VideoRef) -> dict[str, Any]:
         def work() -> dict[str, Any]:
-            with yt_dlp.YoutubeDL(self._base_opts()) as ydl:
+            with self._ydl() as ydl:
                 data = ydl.extract_info(ref.canonical_url, download=False)
                 return yt_dlp.YoutubeDL.sanitize_info(data, remove_private_keys=True)
 
@@ -287,12 +331,12 @@ class YtDlpProvider(MediaProvider):
                 on_progress(int(d.get("downloaded_bytes") or 0), d.get("total_bytes") or d.get("total_bytes_estimate"))
 
         def work(raw: dict[str, Any]) -> None:
-            opts = self._base_opts() | {
+            opts = {
                 "format": format_id,
                 "outtmpl": {"default": str(dest_dir).replace("%", "%%") + f"/{stem}.%(ext)s"},
                 "progress_hooks": [hook],
             }
-            with yt_dlp.YoutubeDL(opts) as ydl:
+            with self._ydl(opts) as ydl:
                 ydl.process_ie_result(copy.deepcopy(raw), download=True)
 
         raw = info.raw
@@ -332,7 +376,7 @@ class YtDlpProvider(MediaProvider):
         def work() -> None:
             if cancel.is_set():
                 raise DownloadCancelled("cancelled")
-            opts = self._base_opts() | {
+            opts = {
                 "skip_download": True,
                 "writesubtitles": track.kind == "manual",
                 "writeautomaticsub": track.kind == "auto",
@@ -340,7 +384,7 @@ class YtDlpProvider(MediaProvider):
                 "subtitlesformat": _CAPTION_FORMAT_PREF,
                 "outtmpl": {"default": prefix + "/captions.%(ext)s", "subtitle": prefix + "/captions.%(ext)s"},
             }
-            with yt_dlp.YoutubeDL(opts) as ydl:
+            with self._ydl(opts) as ydl:
                 ydl.process_ie_result(copy.deepcopy(info.raw), download=True)
 
         try:
@@ -360,11 +404,22 @@ class YtDlpProvider(MediaProvider):
 
     def diagnostics(self) -> dict[str, object]:
         runtimes = {name: bool(shutil.which(name)) for name in self._js_runtimes()}
+        try:
+            plugin_version: str | None = importlib.metadata.version("bgutil-ytdlp-pot-provider")
+        except importlib.metadata.PackageNotFoundError:
+            plugin_version = None
         return {
             "name": self.name,
             "version": yt_dlp.version.__version__,
             "js_runtimes": runtimes,
             "js_runtime_available": any(runtimes.values()),
+            # Booleans only: never expose cookie contents or proxy credentials.
+            "cookies_configured": self.cookies_path is not None,
+            "cookies_file_missing": bool(self.settings.ytdlp_cookies_file) and self.cookies_path is None,  # or unreadable
+            "proxy_configured": bool(self.settings.ytdlp_proxy),
+            "player_clients": self.settings.ytdlp_player_clients or None,
+            "pot_provider": self.settings.pot_provider,
+            "pot_plugin_version": plugin_version,
         }
 
     def shutdown(self) -> None:

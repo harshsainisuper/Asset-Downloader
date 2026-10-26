@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse
 
 from ..errors import AppError
 from ..jobs.manager import JobManager
+from ..media.pot_provider import ping as pot_ping
 from ..media.provider import MediaProvider
 from ..schemas import CancelRequest, InfoRequest, JobCreateRequest, ZipRequest
 from ..security import RateLimiter, client_ip, verify_download
@@ -49,9 +50,13 @@ async def health(request: Request) -> dict:
 async def config(request: Request) -> dict:
     settings = request.app.state.settings
     manager = _manager(request)
+    provider = _provider(request).diagnostics()
+    if settings.pot_provider == "bgutil":
+        pong = await pot_ping(settings.bgutil_base_url)
+        provider["pot_server"] = {"reachable": pong is not None, "version": (pong or {}).get("version")}
     return {
         "ffmpeg_version": request.app.state.ffmpeg_version,
-        "provider": _provider(request).diagnostics(),
+        "provider": provider,
         "stt": {"available": manager.stt is not None, "label": manager.stt.label if manager.stt else None,
                 "provider": settings.stt_provider},
         "limits": {

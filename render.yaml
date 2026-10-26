@@ -17,6 +17,13 @@ services:
         value: "true"          # Render's proxy sets X-Forwarded-For (per-client rate limits)
       - key: RETENTION_MINUTES
         value: "60"
+      # --- YouTube bot checks (README: "YouTube bot checks") -------------------------
+      # The PO-token provider is built into the image and on by default (POT_PROVIDER=bgutil).
+      # If YouTube still blocks Render's IP, add cookies and/or a proxy:
+      - key: YTDLP_COOKIES_FILE
+        value: /etc/secrets/cookies.txt   # upload cookies.txt under Environment → Secret Files
+      - key: YTDLP_PROXY
+        sync: false            # optional, e.g. http://user:pass@residential-proxy:port
       - key: STT_PROVIDER
         value: none            # or openai_compatible (then also set STT_API_KEY)
       - key: STT_API_KEY

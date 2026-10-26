@@ -72,6 +72,22 @@ class Settings(BaseSettings):
     ytdlp_js_runtimes: str = "deno,node"
     ytdlp_socket_timeout: int = Field(default=20, ge=1)
 
+    # --- YouTube bot checks (servers on datacenter IPs) ------------------------------
+    # Netscape-format cookies.txt exported from a YouTube account (use a secondary account).
+    # On Render, upload it as a Secret File and set /etc/secrets/cookies.txt.
+    ytdlp_cookies_file: str = ""
+    # Outbound proxy for YouTube traffic, e.g. http://user:pass@host:port or socks5://host:1080.
+    ytdlp_proxy: str = ""
+    # Optional comma-separated yt-dlp player clients, e.g. "mweb,web_safari" (empty = yt-dlp default).
+    ytdlp_player_clients: str = ""
+    # Proof-of-origin token provider: "bgutil" uses the bgutil-ytdlp-pot-provider plugin.
+    pot_provider: Literal["none", "bgutil"] = "none"
+    bgutil_base_url: str = "http://127.0.0.1:4416"
+    # When set, the app starts and supervises the bgutil HTTP server itself (Docker image);
+    # when empty, an already-running server at BGUTIL_BASE_URL is used.
+    bgutil_server_script: str = ""
+    node_path: str = ""
+
     # --- Speech-to-text fallback ------------------------------------------------
     stt_provider: Literal["none", "openai_compatible", "faster_whisper"] = "none"
     stt_api_base_url: str = "https://api.openai.com/v1"

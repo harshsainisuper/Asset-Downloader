@@ -66,6 +66,7 @@ export function SettingsModal({ open, onClose, config, configError, defaults, on
                   }
                 />
               )}
+              {config.provider.pot_provider !== undefined && <YouTubeAccess provider={config.provider} />}
               <Status
                 ok={config.stt.available}
                 warn={!config.stt.available}
@@ -155,6 +156,42 @@ export function SettingsModal({ open, onClose, config, configError, defaults, on
         </div>
       </div>
     </dialog>
+  );
+}
+
+/** Remedies for YouTube bot checks on server IPs (see README: "YouTube bot checks"). */
+function YouTubeAccess({ provider }: { provider: ServerConfig["provider"] }) {
+  const pot = provider.pot_provider === "bgutil";
+  const potOk = pot && !!provider.pot_server?.reachable && !!provider.pot_plugin_version;
+  const potDetail = !pot
+    ? "Off (POT_PROVIDER=none)"
+    : !provider.pot_plugin_version
+      ? "Plugin not installed (bgutil-ytdlp-pot-provider)"
+      : provider.pot_server?.reachable
+        ? `bgutil ${provider.pot_server.version ?? ""} running`.trim()
+        : "Server not reachable yet (it may still be starting)";
+  return (
+    <>
+      <Status ok={potOk} warn={!potOk} label="PO-token provider" detail={potDetail} />
+      <Status
+        ok={!!provider.cookies_configured}
+        warn={!provider.cookies_configured}
+        label="YouTube cookies"
+        detail={
+          provider.cookies_configured
+            ? "Configured"
+            : provider.cookies_file_missing
+              ? "YTDLP_COOKIES_FILE is set but the file is missing or unreadable"
+              : "Not configured (optional; helps with bot checks)"
+        }
+      />
+      <Status
+        ok={!!provider.proxy_configured}
+        warn={!provider.proxy_configured}
+        label="Outbound proxy"
+        detail={provider.proxy_configured ? "Configured" : "Not configured (optional)"}
+      />
+    </>
   );
 }
 

@@ -6,6 +6,7 @@ Run with:  uvicorn app.main:app --host 127.0.0.1 --port 8000   (single worker: j
 from __future__ import annotations
 
 import logging
+import shutil
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -20,6 +21,7 @@ from .config import Settings, get_settings
 from .errors import AppError
 from .jobs.manager import JobManager
 from .media.ffmpeg import ffmpeg_version
+from .media.pot_provider import BgutilSupervisor
 from .media.provider import MediaProvider
 from .media.ytdlp_provider import YtDlpProvider
 from .security import BodySizeLimitMiddleware, RateLimiter
@@ -60,13 +62,19 @@ def create_app(
         diag = app.state.provider.diagnostics()
         if diag.get("js_runtime_available") is False:
             log.warning("No JavaScript runtime (deno/node) found for yt-dlp; YouTube downloads may fail. See README.")
+        if diag.get("cookies_file_missing"):
+            log.warning("YTDLP_COOKIES_FILE=%s is missing or unreadable; continuing without cookies.", settings.ytdlp_cookies_file)
+        app.state.pot = await _start_pot_provider(settings)
         await app.state.manager.start()
-        log.info("YT Media Toolkit started (provider=%s, stt=%s, temp=%s)", diag.get("name"),
-                 stt_provider.label if stt_provider else "disabled", settings.temp_dir)
+        log.info("YT Media Toolkit started (provider=%s, stt=%s, pot=%s, cookies=%s, proxy=%s, temp=%s)",
+                 diag.get("name"), stt_provider.label if stt_provider else "disabled", settings.pot_provider,
+                 bool(diag.get("cookies_configured")), bool(diag.get("proxy_configured")), settings.temp_dir)
         try:
             yield
         finally:
             await app.state.manager.stop()
+            if app.state.pot:
+                await app.state.pot.stop()
             shutdown = getattr(app.state.provider, "shutdown", None)
             if callable(shutdown):
                 shutdown()
@@ -118,6 +126,20 @@ def create_app(
     app.include_router(router)
     _mount_frontend(app, settings)
     return app
+
+
+async def _start_pot_provider(settings: Settings) -> BgutilSupervisor | None:
+    """Start the bundled bgutil PO-token server when configured (Docker image)."""
+    if settings.pot_provider != "bgutil" or not settings.bgutil_server_script:
+        return None
+    node = settings.node_path or shutil.which("node")
+    if not node or not Path(settings.bgutil_server_script).is_file():
+        log.error("POT_PROVIDER=bgutil but node or BGUTIL_SERVER_SCRIPT (%s) is missing; PO tokens disabled.",
+                  settings.bgutil_server_script)
+        return None
+    supervisor = BgutilSupervisor.for_script(node, settings.bgutil_server_script, settings.bgutil_base_url)
+    await supervisor.start()
+    return supervisor
 
 
 def _mount_frontend(app: FastAPI, settings: Settings) -> None:

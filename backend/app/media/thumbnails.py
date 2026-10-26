@@ -21,6 +21,7 @@ from typing import Literal
 import httpx
 from PIL import Image
 
+from ..config import get_settings
 from ..errors import AppError
 from .models import VideoInfo
 
@@ -54,7 +55,9 @@ class ThumbnailResult:
 
 
 def make_client() -> httpx.AsyncClient:
-    return httpx.AsyncClient(timeout=httpx.Timeout(10.0), follow_redirects=False)
+    # Same outbound proxy as yt-dlp (YTDLP_PROXY), if one is configured.
+    proxy = get_settings().ytdlp_proxy or None
+    return httpx.AsyncClient(timeout=httpx.Timeout(10.0), follow_redirects=False, proxy=proxy)
 
 
 def candidate_urls(info: VideoInfo) -> list[str]:

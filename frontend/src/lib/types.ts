@@ -104,7 +104,19 @@ export interface Job {
 
 export interface ServerConfig {
   ffmpeg_version: string | null;
-  provider: { name: string; version?: string; js_runtimes?: Record<string, boolean>; js_runtime_available?: boolean };
+  provider: {
+    name: string;
+    version?: string;
+    js_runtimes?: Record<string, boolean>;
+    js_runtime_available?: boolean;
+    cookies_configured?: boolean;
+    cookies_file_missing?: boolean;
+    proxy_configured?: boolean;
+    player_clients?: string | null;
+    pot_provider?: "none" | "bgutil";
+    pot_plugin_version?: string | null;
+    pot_server?: { reachable: boolean; version: string | null };
+  };
   stt: { available: boolean; label: string | null; provider: string };
   limits: { retention_minutes: number; max_duration_seconds: number; max_filesize_mb: number; max_concurrent_jobs: number };
 }

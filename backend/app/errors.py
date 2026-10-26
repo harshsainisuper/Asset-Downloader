@@ -60,8 +60,9 @@ _PROVIDER_ERROR_RULES: list[tuple[re.Pattern[str], str, str]] = [
      "drm_protected", "This video is DRM-protected and cannot be downloaded."),
     (re.compile(r"not a bot|sign in to confirm|HTTP Error 429|too many requests|rate.?limit", re.I),
      "provider_blocked",
-     "YouTube temporarily refused the request from this server (bot check or rate limit). "
-     "Try again later or from a different network."),
+     "YouTube is blocking requests from this server's network (bot check or rate limit). "
+     "The server administrator can fix this with YouTube cookies, a PO-token provider or a "
+     "proxy (README: \"YouTube bot checks\")."),
     (re.compile(r"requested format is not available|no video formats found", re.I),
      "format_unavailable", "The requested format is not available for this video."),
     (re.compile(r"video unavailable|this video is unavailable|does not exist|incomplete youtube id|"
