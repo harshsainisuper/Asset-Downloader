@@ -1,4 +1,4 @@
-"""Behaviour needed when the UI (Vercel) and API (container host) are on different origins."""
+"""Deployment behaviour: proxy-aware client IPs, optional cross-origin UI, same-origin UI serving."""
 
 from starlette.requests import Request
 
@@ -40,3 +40,25 @@ def test_cors_rejects_other_origins_and_supports_preview_regex(make_client):
     assert ok.headers.get("access-control-allow-origin") == "https://ytmt-git-feature-me.vercel.app"
     bad = client.post("/api/info", json={"url": URL}, headers={"Origin": "https://evil.vercel.app"})
     assert "access-control-allow-origin" not in bad.headers
+
+
+def test_backend_serves_built_frontend_same_origin(make_client, tmp_path):
+    """Single-service deployment (Render/Docker): the API also serves the UI."""
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<!doctype html><div id=root></div>")
+    (dist / "assets" / "index-abc123.js").write_text("console.log(1)")
+    client = make_client(serve_frontend=True, frontend_dist=dist)
+
+    index = client.get("/")
+    assert index.status_code == 200 and "id=root" in index.text
+    assert "default-src 'self'" in index.headers["content-security-policy"]
+    assert index.headers["cache-control"] == "no-cache"
+
+    asset = client.get("/assets/index-abc123.js")
+    assert asset.status_code == 200 and "immutable" in asset.headers["cache-control"]
+
+    assert client.get("/some/client/route").text == index.text  # SPA fallback
+    assert client.get("/../../etc/passwd").text == index.text  # never escapes dist
+    assert client.get("/api/health").json()["status"] == "ok"  # API still wins
+    assert client.get("/api/nope").status_code == 404

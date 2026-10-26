@@ -1,6 +1,17 @@
-# Backend API image (FastAPI + yt-dlp + FFmpeg + Deno). Build from the repository root:
-#   docker build -t yt-media-toolkit-api .
-#   docker run -p 8000:8000 -e SECRET_KEY=... -e CORS_ORIGINS=https://your-app.vercel.app yt-media-toolkit-api
+# Single image serving both the UI and the API (FastAPI + yt-dlp + FFmpeg + Deno).
+# Build from the repository root:
+#   docker build -t yt-media-toolkit .
+#   docker run -p 8000:8000 -e SECRET_KEY=change-me yt-media-toolkit   → http://localhost:8000
+
+# --- Stage 1: build the React frontend ------------------------------------------------
+FROM node:22-slim AS frontend
+WORKDIR /src/frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY frontend/ ./
+RUN npm run build
+
+# --- Stage 2: Python API that also serves the built UI ---------------------------------
 FROM python:3.13-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -19,6 +30,8 @@ COPY backend/requirements.txt .
 RUN pip install -r requirements.txt
 
 COPY backend/app ./app
+# The API serves the UI from /app/frontend/dist (same origin, so no CORS setup needed).
+COPY --from=frontend /src/frontend/dist /app/frontend/dist
 
 RUN useradd --create-home --uid 10001 app \
     && mkdir -p /app/backend/tmp \
@@ -26,7 +39,8 @@ RUN useradd --create-home --uid 10001 app \
 USER app
 
 ENV APP_ENV=production \
-    SERVE_FRONTEND=false \
+    SERVE_FRONTEND=true \
+    FRONTEND_DIST=/app/frontend/dist \
     TEMP_DIR=/app/backend/tmp \
     PORT=8000
 

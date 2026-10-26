@@ -1,8 +1,9 @@
 import type { Job, JobFile, OutputKind, ServerConfig, VideoInfo } from "./types";
 
 /**
- * Backend origin. Empty in local development and single-process mode (same-origin /api).
- * Set VITE_API_BASE_URL when the UI is hosted separately (e.g. on Vercel).
+ * Backend origin. Empty when the UI is served by the backend itself (Docker/Render, local
+ * single-process mode) or via the Vite dev proxy. Set VITE_API_BASE_URL only if the UI is
+ * hosted on a different origin than the API.
  */
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").trim().replace(/\/+$/, "");
 

@@ -137,6 +137,9 @@ def _mount_frontend(app: FastAPI, settings: Settings) -> None:
         if candidate == index:
             headers |= {"Content-Security-Policy": _HTML_CSP, "Cache-Control": "no-cache",
                         "Referrer-Policy": "no-referrer", "X-Frame-Options": "DENY"}
+        elif candidate.is_relative_to(dist / "assets"):
+            # Vite emits content-hashed asset names, so they can be cached forever.
+            headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return FileResponse(Path(candidate), headers=headers)
 
 

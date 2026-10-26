@@ -1,5 +1,12 @@
-# Only the backend source and its requirements are needed in the image.
+# Allowlist: only what the image build needs.
 *
 !backend/requirements.txt
 !backend/app/
+!frontend/package.json
+!frontend/package-lock.json
+!frontend/index.html
+!frontend/tsconfig.json
+!frontend/vite.config.ts
+!frontend/public/
+!frontend/src/
 **/__pycache__

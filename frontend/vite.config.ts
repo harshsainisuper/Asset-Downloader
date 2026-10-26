@@ -4,18 +4,6 @@ import tailwindcss from "@tailwindcss/vite";
 
 const apiTarget = process.env.VITE_API_PROXY_TARGET ?? "http://127.0.0.1:8000";
 
-// On Vercel the UI is static and the API runs elsewhere: fail the build early if the
-// backend URL is missing or not HTTPS (browsers block HTTP calls from an HTTPS page).
-if (process.env.VERCEL) {
-  const base = process.env.VITE_API_BASE_URL ?? "";
-  if (!/^https:\/\/[^/\s]+/.test(base)) {
-    throw new Error(
-      "VITE_API_BASE_URL must be set to your backend's https:// URL in the Vercel project's " +
-        "Environment Variables (e.g. https://yt-media-toolkit-api.onrender.com). See README → Deploying.",
-    );
-  }
-}
-
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {

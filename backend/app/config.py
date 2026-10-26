@@ -31,8 +31,8 @@ class Settings(BaseSettings):
     # because jobs are kept in memory anyway).
     secret_key: str = ""
     cors_origins: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"])
-    # Regex for extra allowed origins, e.g. Vercel preview deployments:
-    # ^https://your-project(-[a-z0-9-]+)?\.vercel\.app$
+    # Regex for extra allowed origins (only when the UI is on another origin), e.g.
+    # ^https://ui(-[a-z0-9-]+)?\.example\.com$
     cors_origin_regex: str = ""
     # Serve the built frontend (frontend/dist) from the API server.
     serve_frontend: bool = True

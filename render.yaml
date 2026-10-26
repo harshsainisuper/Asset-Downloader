@@ -1,26 +1,23 @@
-# Render Blueprint for the backend API (Render dashboard → New → Blueprint → select this repo).
-# After the first deploy, set CORS_ORIGINS to your Vercel URL and redeploy.
+# Render Blueprint: ONE web service that serves both the UI and the API.
+# Render dashboard → New → Blueprint → select this repository → Apply.
 services:
   - type: web
-    name: yt-media-toolkit-api
+    name: yt-media-toolkit
     runtime: docker
     dockerfilePath: ./Dockerfile
     # "free" sleeps after 15 min idle (in-memory jobs are lost then) and has 512 MB RAM;
     # use "starter" or higher for regular use and 4K/H.264 re-encodes.
     plan: free
     healthCheckPath: /api/health
+    autoDeploy: true
     envVars:
       - key: SECRET_KEY
-        generateValue: true
-      - key: CORS_ORIGINS
-        sync: false            # e.g. https://yt-media-toolkit.vercel.app
-      - key: CORS_ORIGIN_REGEX
-        sync: false            # optional, e.g. ^https://yt-media-toolkit(-[a-z0-9-]+)?\.vercel\.app$
+        generateValue: true    # signs download links
       - key: TRUST_PROXY_HEADERS
-        value: "true"          # Render's proxy sets X-Forwarded-For
+        value: "true"          # Render's proxy sets X-Forwarded-For (per-client rate limits)
       - key: RETENTION_MINUTES
         value: "60"
       - key: STT_PROVIDER
         value: none            # or openai_compatible (then also set STT_API_KEY)
       - key: STT_API_KEY
-        sync: false
+        sync: false            # entered in the dashboard; never committed

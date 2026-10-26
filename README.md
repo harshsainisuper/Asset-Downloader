@@ -41,15 +41,13 @@ Outputs are independent: a job only ever runs the processors you ticked. Each ou
 
 ### Project layout
 
-One repository holds everything. Vercel deploys the frontend from it, and a container
-host builds the backend from the same repo root:
+One repository holds everything. The Dockerfile builds the UI and the API into a single
+image, deployed as one Render web service:
 
 ```
 .
-├── vercel.json                  Vercel: builds frontend/, serves frontend/dist, security headers
-├── .vercelignore                keeps backend/ out of Vercel uploads
-├── Dockerfile / .dockerignore   backend API image (FFmpeg + Deno + yt-dlp)
-├── render.yaml                  optional Render blueprint for the backend
+├── Dockerfile / .dockerignore   one image: builds the UI (Node) + API (FFmpeg, Deno, yt-dlp)
+├── render.yaml                  Render blueprint: a single web service
 ├── .env.example                 configuration template (no secrets)
 ├── scripts/dev.sh               start backend + frontend dev servers
 ├── backend/
@@ -147,7 +145,7 @@ Open **<http://127.0.0.1:8000>**.
 ### Tests and checks
 
 ```bash
-cd backend  && .venv/bin/python -m pytest          # 166 tests: URLs, selection, formats, jobs, errors, FFmpeg, CORS
+cd backend  && .venv/bin/python -m pytest          # 167 tests: URLs, selection, formats, jobs, errors, FFmpeg, CORS
 cd backend  && .venv/bin/ruff check app tests
 cd frontend && npm test && npm run build           # vitest + type-check + production build
 ```
@@ -156,58 +154,34 @@ Backend tests need no network. They use a fake provider that serves FFmpeg-gener
 
 ---
 
-## Deploying: Vercel (frontend) + container host (backend)
+## Deploying on Render (one service)
 
-Vercel serves the UI. The API runs as a Docker container elsewhere, because Vercel Functions can't run this backend:
-
-- Responses are capped at 4.5 MB, so media files can't be downloaded through a function.
-- A request may run 300 s (Hobby) or 800 s (Pro), and there are no background workers or shared in-memory state between requests.
-- FFmpeg isn't available in the function runtime.
-
-The browser calls the backend directly (`VITE_API_BASE_URL`), and downloads stream straight from it. Neither goes through Vercel, so there are no Vercel bandwidth or size limits on files.
+A single Render **web service** runs everything. The multi-stage `Dockerfile` builds the React UI with Node, then the Python image serves it together with the API on the same URL. No CORS settings, no second service, and no frontend environment variables are needed.
 
 ```
-Browser ──▶ https://your-app.vercel.app        (static UI from frontend/dist)
-   └──────▶ https://your-api.onrender.com/api   (FastAPI container: jobs, FFmpeg, downloads)
+Browser ──▶ https://yt-media-toolkit.onrender.com
+              ├── /        UI (built frontend/dist)
+              └── /api/…   API: jobs, FFmpeg, signed downloads
 ```
 
-### 1. Push the repository to GitHub
+### Steps
 
-Both platforms deploy from the **repository root**. Don't set a "Root Directory".
+1. Push this repository to GitHub.
+2. Render dashboard → **New → Blueprint** → connect the repository → **Apply**. `render.yaml` creates the `yt-media-toolkit` web service, builds the Dockerfile, generates `SECRET_KEY`, sets the health check to `/api/health`, and turns on `TRUST_PROXY_HEADERS`.
+   *Manual alternative:* **New → Web Service** → the repo → Runtime **Docker** → health check path `/api/health` → add env vars `SECRET_KEY` (long random string) and `TRUST_PROXY_HEADERS=true`.
+3. Wait for the first build (~5 min), then open the service URL. **Settings → Server status** should show FFmpeg, yt-dlp and the Deno runtime as available.
 
-### 2. Deploy the backend (Render shown; Railway, Fly.io or any Docker host work the same way)
+Every push to the deployed branch redeploys automatically (`autoDeploy: true`).
 
-**Render, with the included blueprint:** Dashboard → **New → Blueprint** → select the repo. This uses `render.yaml`, builds the root `Dockerfile`, and generates `SECRET_KEY`.
-**Render, manually:** **New → Web Service** → the repo → Runtime **Docker** → health check path `/api/health`.
+Optional environment variables (Render → service → **Environment**): `RETENTION_MINUTES`, `MAX_DURATION_SECONDS`, `MAX_FILESIZE_MB`, and the `STT_*` speech-to-text settings below. Set `STT_API_KEY` in the dashboard only; never commit it.
 
-Backend environment variables:
+> Run **one instance with one worker** (the Dockerfile does this). Jobs live in memory, so don't scale horizontally. Render's **free** plan sleeps after 15 idle minutes (the first request then takes ~30–60 s and unfinished jobs are lost) and has 512 MB RAM. Use **Starter** or higher for regular use and 4K/H.264 re-encodes.
 
-| Variable | Value |
-|---|---|
-| `SECRET_KEY` | long random string (the blueprint generates one) |
-| `CORS_ORIGINS` | your Vercel URL, e.g. `https://yt-media-toolkit.vercel.app`. Set after step 3 and redeploy. |
-| `CORS_ORIGIN_REGEX` | optional, for preview deployments: `^https://yt-media-toolkit(-[a-z0-9-]+)?\.vercel\.app$` |
-| `TRUST_PROXY_HEADERS` | `true` on Render, Railway or Fly.io (they set `X-Forwarded-For`). `false` if the container is exposed directly. |
-| `STT_*` | optional, see Speech-to-text |
-
-`PORT` is read automatically. Note the service's **https** URL, e.g. `https://yt-media-toolkit-api.onrender.com`. Check it with `curl https://…/api/health`.
-
-Other hosts: `docker build -t ytmt-api .` then `docker run -p 8000:8000 -e SECRET_KEY=… -e CORS_ORIGINS=https://your-app.vercel.app ytmt-api`. Put HTTPS in front of it, because browsers block `http://` API calls from an `https://` page.
-
-> Run a **single instance with a single worker** (the Dockerfile does this). Jobs live in memory, so don't scale horizontally. Render's free plan sleeps after 15 idle minutes and has 512 MB RAM, which is fine for trying it out. Use a paid plan for regular use and 4K/H.264 re-encodes.
-
-### 3. Deploy the frontend on Vercel
-
-1. Vercel → **Add New → Project** → import the repo. Leave Root Directory as the repo root. `vercel.json` already sets install, build and output (`frontend/dist`).
-2. **Settings → Environment Variables:** `VITE_API_BASE_URL` = the backend URL from step 2, with no trailing `/api`. Enable it for Production (and Preview if you use previews).
-3. Deploy. The build **fails on purpose** with a clear message if `VITE_API_BASE_URL` is missing or isn't `https://`. Changing it later needs a redeploy, because it's baked in at build time.
-4. Add the Vercel URL to the backend's `CORS_ORIGINS` and redeploy the backend.
-
-Open the Vercel URL. **Settings → Server status** should show FFmpeg, yt-dlp and the Deno runtime as available.
+The same image runs anywhere Docker does: `docker build -t yt-media-toolkit . && docker run -p 8000:8000 -e SECRET_KEY=change-me yt-media-toolkit`, then open <http://localhost:8000>. Put HTTPS in front of it for public use.
 
 ### YouTube and cloud IPs
 
-YouTube often answers requests from datacenter IP ranges (Render, Railway, AWS, …) with "Sign in to confirm you're not a bot". The app reports this as `provider_blocked`. Thumbnails usually still work. For reliable video, audio and caption downloads, run the backend container from a residential connection, e.g. a home server or NAS exposed via Cloudflare Tunnel or Tailscale Funnel, and keep the UI on Vercel. Cookie or account-based bypasses are intentionally not implemented.
+YouTube often answers requests from datacenter IP ranges (Render, Railway, AWS, …) with "Sign in to confirm you're not a bot". The app reports this as `provider_blocked`. Thumbnails usually still work. For reliable video, audio and caption downloads, run the same container from a residential connection, e.g. a home server or NAS exposed via Cloudflare Tunnel or Tailscale Funnel. Cookie or account-based bypasses are intentionally not implemented.
 
 ---
 
@@ -275,8 +249,8 @@ Check the status under **Settings → Server status**.
 | "YouTube temporarily refused the request (bot check or rate limit)" | Common from cloud/datacenter IPs. Run from a residential network, wait, or reduce traffic. Cookie or account-based bypasses are intentionally not implemented. |
 | Settings shows "JavaScript runtime: None found" | Install Deno or Node 22+ and make sure it is on the backend's PATH. `YTDLP_JS_RUNTIMES` controls which runtimes are tried. |
 | "FFmpeg is not installed on the server" | Install FFmpeg (see above) or set `FFMPEG_PATH`/`FFPROBE_PATH`. |
-| UI says "Cannot reach the server" | Locally: start the backend on port 8000, or set `VITE_API_PROXY_TARGET` before `npm run dev`. On Vercel: check `VITE_API_BASE_URL` (then redeploy) and that the backend's `CORS_ORIGINS` contains the exact Vercel URL (scheme, no trailing slash). The browser console shows CORS errors. |
-| Vercel build fails: "VITE_API_BASE_URL must be set" | Add the variable in Vercel → Settings → Environment Variables (https URL of the backend) and redeploy. |
+| UI says "Cannot reach the server" | Locally: start the backend on port 8000, or set `VITE_API_PROXY_TARGET` before `npm run dev`. On Render: check the service's **Logs** and **Events** for a failed deploy or crash. |
+| Render build fails | Open the deploy log. Most often a transient network error during `npm ci`/`pip install`; use **Manual Deploy → Clear build cache & deploy**. |
 | First request on Render is very slow | The free plan sleeps when idle. The first request wakes it (~30–60 s). |
 | Transcript fails with "AI transcription is not configured" | Configure `STT_PROVIDER` (see Speech-to-text) and restart. |
 | STT "rejected the API key" / HTTP 413 | Check `STT_API_KEY`, or lower `STT_CHUNK_SECONDS` for servers with smaller upload limits. |
