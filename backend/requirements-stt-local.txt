@@ -1,0 +1,2 @@
+# Optional: local speech-to-text (STT_PROVIDER=faster_whisper). Downloads model weights on first use.
+faster-whisper>=1.0

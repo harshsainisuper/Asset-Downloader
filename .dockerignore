@@ -1,0 +1,5 @@
+# Only the backend source and its requirements are needed in the image.
+*
+!backend/requirements.txt
+!backend/app/
+**/__pycache__

@@ -1,0 +1,10 @@
+# Vercel only builds the static frontend; the API is deployed separately (see Dockerfile).
+backend/
+scripts/
+Dockerfile
+.dockerignore
+render.yaml
+.env
+frontend/node_modules/
+frontend/dist/
+*.zip
