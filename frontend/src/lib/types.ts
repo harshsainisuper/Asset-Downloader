@@ -109,6 +109,7 @@ export interface ServerConfig {
     version?: string;
     js_runtimes?: Record<string, boolean>;
     js_runtime_available?: boolean;
+    cookies_status?: "configured" | "missing" | "unreadable" | "not_configured";
     cookies_configured?: boolean;
     cookies_file_missing?: boolean;
     proxy_configured?: boolean;

@@ -2,6 +2,7 @@
 *
 !backend/requirements.txt
 !backend/app/
+!backend/docker-entrypoint.sh
 !frontend/package.json
 !frontend/package-lock.json
 !frontend/index.html

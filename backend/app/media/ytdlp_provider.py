@@ -40,6 +40,8 @@ log = logging.getLogger(__name__)
 
 _ALLOWED_THUMB_HOSTS = re.compile(r"^https://i[0-9]?\.ytimg\.com/", re.I)
 _CAPTION_FORMAT_PREF = "json3/vtt/srv3/best"
+# Where Render mounts Secret Files for Docker services; used when YTDLP_COOKIES_FILE is unset.
+DEFAULT_COOKIE_PATHS = (Path("/etc/secrets/cookies.txt"),)
 
 
 class _YtdlpLogger:
@@ -66,6 +68,7 @@ class YtDlpProvider(MediaProvider):
         self._info_cache: dict[str, tuple[float, VideoInfo]] = {}
         self._cache_lock = threading.Lock()
         self._cookie_dir = settings.temp_dir / "cookies"
+        self.default_cookie_paths: tuple[Path, ...] = DEFAULT_COOKIE_PATHS
 
     # ------------------------------------------------------------------ options
 
@@ -104,10 +107,26 @@ class YtDlpProvider(MediaProvider):
             opts["extractor_args"] = extractor_args
         return opts
 
+    def _cookie_candidate(self) -> Path | None:
+        if self.settings.ytdlp_cookies_file:
+            return Path(self.settings.ytdlp_cookies_file)
+        return next((p for p in self.default_cookie_paths if p.exists()), None)
+
+    @property
+    def cookie_status(self) -> str:
+        """One of: configured, missing, unreadable, not_configured."""
+        path = self._cookie_candidate()
+        if path is None:
+            return "not_configured"
+        if not path.is_file():
+            return "missing"
+        if not os.access(path, os.R_OK):
+            return "unreadable"
+        return "configured"
+
     @property
     def cookies_path(self) -> Path | None:
-        path = Path(self.settings.ytdlp_cookies_file) if self.settings.ytdlp_cookies_file else None
-        return path if path and path.is_file() and os.access(path, os.R_OK) else None
+        return self._cookie_candidate() if self.cookie_status == "configured" else None
 
     @contextlib.contextmanager
     def _ydl(self, extra: dict[str, Any] | None = None) -> Iterator[yt_dlp.YoutubeDL]:
@@ -414,8 +433,9 @@ class YtDlpProvider(MediaProvider):
             "js_runtimes": runtimes,
             "js_runtime_available": any(runtimes.values()),
             # Booleans only: never expose cookie contents or proxy credentials.
-            "cookies_configured": self.cookies_path is not None,
-            "cookies_file_missing": bool(self.settings.ytdlp_cookies_file) and self.cookies_path is None,  # or unreadable
+            "cookies_status": (cookie_status := self.cookie_status),
+            "cookies_configured": cookie_status == "configured",
+            "cookies_file_missing": cookie_status in ("missing", "unreadable"),
             "proxy_configured": bool(self.settings.ytdlp_proxy),
             "player_clients": self.settings.ytdlp_player_clients or None,
             "pot_provider": self.settings.pot_provider,

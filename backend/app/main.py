@@ -62,8 +62,8 @@ def create_app(
         diag = app.state.provider.diagnostics()
         if diag.get("js_runtime_available") is False:
             log.warning("No JavaScript runtime (deno/node) found for yt-dlp; YouTube downloads may fail. See README.")
-        if diag.get("cookies_file_missing"):
-            log.warning("YTDLP_COOKIES_FILE=%s is missing or unreadable; continuing without cookies.", settings.ytdlp_cookies_file)
+        if diag.get("cookies_status") in ("missing", "unreadable"):
+            log.warning("YouTube cookies file is %s; continuing without cookies.", diag["cookies_status"])
         app.state.pot = await _start_pot_provider(settings)
         await app.state.manager.start()
         log.info("YT Media Toolkit started (provider=%s, stt=%s, pot=%s, cookies=%s, proxy=%s, temp=%s)",

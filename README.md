@@ -189,7 +189,7 @@ A real browser proves it is one by sending a proof-of-origin (PO) token generate
 **2. Cookies from a YouTube account (most effective on Render).**
 1. Use a **secondary** Google account. YouTube may restrict accounts used for automated downloading. Never use your main account.
 2. In a private/incognito window, sign in to youtube.com with that account. Export the cookies for `youtube.com` in **Netscape cookies.txt** format with a browser extension ("Get cookies.txt LOCALLY" or similar). Then close the private window without signing out, so YouTube doesn't rotate the session.
-3. Render → your service → **Environment → Secret Files → Add**: filename `cookies.txt`, paste the file contents. `render.yaml` already sets `YTDLP_COOKIES_FILE=/etc/secrets/cookies.txt`. Save, which redeploys.
+3. Render → your service → **Environment → Secret Files → Add**: filename `cookies.txt`, paste the file contents. Save, which redeploys. Nothing else to set: the app finds `/etc/secrets/cookies.txt` automatically. Render mounts Secret Files root-owned, so the container's entrypoint copies the file into a private, app-owned location before dropping to the unprivileged `app` user. Elsewhere, point `YTDLP_COOKIES_FILE` at any cookies.txt path.
 
 The cookie file never leaves the server and is not shown in the UI or API. Each download uses a private temporary copy, so the original stays untouched. Cookies expire eventually. When the bot check returns, export fresh ones. Signed-in requests can also play videos that account may watch (e.g. age-restricted ones on an age-verified account).
 

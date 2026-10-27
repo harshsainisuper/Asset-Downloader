@@ -180,9 +180,11 @@ function YouTubeAccess({ provider }: { provider: ServerConfig["provider"] }) {
         detail={
           provider.cookies_configured
             ? "Configured"
-            : provider.cookies_file_missing
-              ? "YTDLP_COOKIES_FILE is set but the file is missing or unreadable"
-              : "Not configured (optional; helps with bot checks)"
+            : provider.cookies_status === "unreadable"
+              ? "Cookie file found but not readable by the app (check file permissions)"
+              : provider.cookies_file_missing
+                ? "YTDLP_COOKIES_FILE is set but the file does not exist"
+                : "Not configured: add a Render Secret File named cookies.txt"
         }
       />
       <Status

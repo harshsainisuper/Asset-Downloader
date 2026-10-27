@@ -150,3 +150,43 @@ def test_app_starts_without_bundled_server(make_client, script):
     client = make_client(pot_provider="bgutil", bgutil_server_script=script)
     assert client.get("/api/health").status_code == 200
     assert client.app.state.pot is None
+
+
+# --------------------------------------------------------------------------- cookie discovery
+
+
+def test_render_secret_file_is_found_without_configuration(tmp_path):
+    secret = tmp_path / "etc-secrets" / "cookies.txt"
+    secret.parent.mkdir()
+    secret.write_text(COOKIES)
+    provider = _provider(tmp_path)  # YTDLP_COOKIES_FILE not set
+    provider.default_cookie_paths = (secret,)
+    assert provider.cookie_status == "configured" and provider.cookies_path == secret
+    with provider._ydl() as ydl:
+        assert any(c.name == "PREF" for c in ydl.cookiejar)
+
+
+@pytest.mark.parametrize("setup,expected", [
+    ("none", "not_configured"),
+    ("explicit_missing", "missing"),
+    ("unreadable", "unreadable"),
+    ("explicit_ok", "configured"),
+])
+def test_cookie_status(tmp_path, monkeypatch, setup, expected):
+    path = tmp_path / "cookies.txt"
+    kw = {}
+    if setup != "none":
+        kw["ytdlp_cookies_file"] = str(path)
+    if setup in ("unreadable", "explicit_ok"):
+        path.write_text(COOKIES)
+    if setup == "unreadable":
+        # Tests may run as root, which can read anything; simulate a root-owned 0600 file.
+        real_access = os.access
+        monkeypatch.setattr(os, "access", lambda p, mode: False if str(p) == str(path) else real_access(p, mode))
+    provider = _provider(tmp_path, **kw)
+    provider.default_cookie_paths = (tmp_path / "absent.txt",)
+    diag = provider.diagnostics()
+    assert provider.cookie_status == expected == diag["cookies_status"]
+    assert diag["cookies_configured"] is (expected == "configured")
+    assert diag["cookies_file_missing"] is (expected in ("missing", "unreadable"))
+    assert (provider.cookies_path is not None) is (expected == "configured")

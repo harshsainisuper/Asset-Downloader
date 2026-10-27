@@ -43,13 +43,15 @@ COPY --from=potserver /usr/local/bin/node /usr/local/bin/node
 COPY --from=potserver /app /opt/bgutil
 
 COPY backend/app ./app
+COPY backend/docker-entrypoint.sh /app/docker-entrypoint.sh
 # The API serves the UI from /app/frontend/dist (same origin, so no CORS setup needed).
 COPY --from=frontend /src/frontend/dist /app/frontend/dist
 
 RUN useradd --create-home --uid 10001 app \
     && mkdir -p /app/backend/tmp \
     && chown -R app:app /app/backend/tmp
-USER app
+# No "USER app": the entrypoint starts as root only to copy root-owned Render Secret Files
+# (cookies.txt) into an app-owned location, then drops to the app user for the server.
 
 ENV APP_ENV=production \
     SERVE_FRONTEND=true \
@@ -64,4 +66,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
     CMD python -c "import os,urllib.request; urllib.request.urlopen(f'http://127.0.0.1:{os.environ[\"PORT\"]}/api/health', timeout=4)"
 
 # Exactly one worker: jobs are kept in process memory.
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port \"$PORT\" --workers 1 --no-server-header"]
