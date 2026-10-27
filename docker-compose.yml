@@ -1,0 +1,57 @@
+# Run YT Media Toolkit on your own computer. Your home internet connection is trusted by
+# YouTube, so no cookies or proxy are needed (unlike cloud hosts such as Render).
+#
+#   Only on this computer:            docker compose up -d --build
+#                                     → http://localhost:8000
+#   + temporary public URL (no account): docker compose --profile quick-tunnel up -d --build
+#                                     → URL: docker compose logs quick-tunnel   (look for trycloudflare.com)
+#   + fixed URL on your own domain:   docker compose --profile tunnel up -d --build
+#                                     (needs CLOUDFLARE_TUNNEL_TOKEN, see README "Run it at home")
+#
+# Optional settings are read from a .env file next to this file (see .env.example, "Home hosting").
+# Always set ACCESS_PASSWORD before using a tunnel: the URL is reachable from the whole internet.
+
+services:
+  app:
+    build: .
+    image: yt-media-toolkit:local
+    restart: unless-stopped
+    ports:
+      # Only this computer can open it directly; tunnels reach it over the internal network.
+      # Use "${HOST_PORT:-8000}:8000" instead to allow other devices on your Wi-Fi.
+      - "127.0.0.1:${HOST_PORT:-8000}:8000"
+    environment:
+      SECRET_KEY: ${SECRET_KEY:-}
+      ACCESS_PASSWORD: ${ACCESS_PASSWORD:-}
+      TRUST_PROXY_HEADERS: "true"
+      RETENTION_MINUTES: ${RETENTION_MINUTES:-60}
+      MAX_CONCURRENT_JOBS: ${MAX_CONCURRENT_JOBS:-2}
+      YTDLP_COOKIES_FILE: ${YTDLP_COOKIES_FILE:-}
+      YTDLP_PROXY: ${YTDLP_PROXY:-}
+      STT_PROVIDER: ${STT_PROVIDER:-none}
+      STT_API_BASE_URL: ${STT_API_BASE_URL:-https://api.openai.com/v1}
+      STT_API_KEY: ${STT_API_KEY:-}
+      STT_MODEL: ${STT_MODEL:-whisper-1}
+
+  # Free temporary https://<random>.trycloudflare.com URL. No Cloudflare account needed;
+  # the URL changes every time this container restarts.
+  quick-tunnel:
+    image: cloudflare/cloudflared:2026.10.4
+    profiles: [quick-tunnel]
+    restart: unless-stopped
+    command: ["tunnel", "--url", "http://app:8000"]
+    depends_on:
+      app:
+        condition: service_healthy
+
+  # Permanent URL on your own domain via a named Cloudflare Tunnel (free Cloudflare account).
+  tunnel:
+    image: cloudflare/cloudflared:2026.10.4
+    profiles: [tunnel]
+    restart: unless-stopped
+    command: ["tunnel", "run"]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      app:
+        condition: service_healthy

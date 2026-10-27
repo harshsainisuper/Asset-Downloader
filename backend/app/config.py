@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     # Trust X-Forwarded-For for client IPs. Only enable behind exactly one trusted reverse
     # proxy (Render, Railway, Fly.io, nginx...): the entry appended by that proxy is used.
     trust_proxy_headers: bool = False
+    # Optional password for the whole app (HTTP Basic auth; any username). Set it whenever the
+    # app is reachable from the internet, e.g. through a Cloudflare Tunnel from a home machine.
+    access_password: str = ""
 
     # --- Storage & retention -------------------------------------------------
     temp_dir: Path = BACKEND_DIR / "tmp"

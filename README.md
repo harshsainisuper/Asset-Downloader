@@ -47,6 +47,7 @@ image, deployed as one Render web service:
 ```
 .
 ├── Dockerfile / .dockerignore   one image: builds the UI (Node) + API (FFmpeg, Deno, yt-dlp)
+├── docker-compose.yml           run at home, optionally behind a Cloudflare Tunnel
 ├── render.yaml                  Render blueprint: a single web service
 ├── .env.example                 configuration template (no secrets)
 ├── scripts/dev.sh               start backend + frontend dev servers
@@ -154,7 +155,72 @@ Backend tests need no network. They use a fake provider that serves FFmpeg-gener
 
 ---
 
+## Run it at home (recommended)
+
+YouTube blocks or rate-limits most cloud servers, including Render's. Your home internet connection doesn't have that problem, so running the app on your own computer is the free and reliable option: **no cookies and no proxy needed**. Docker runs everything (FFmpeg, yt-dlp, the PO-token server). A free **Cloudflare Tunnel** can make it reachable from your phone or anywhere else without opening router ports.
+
+### 1. Install Docker
+
+- **Windows / macOS:** install [Docker Desktop](https://www.docker.com/products/docker-desktop/) and start it. On Windows, accept the WSL 2 setup it offers.
+- **Linux:** install Docker Engine with the Compose plugin.
+
+Works on Intel/AMD and ARM (Apple Silicon, Raspberry Pi 4/5 with a 64-bit OS).
+
+### 2. Get the code and settings
+
+```bash
+git clone https://github.com/harshsainisuper/yt-media-toolkit.git
+cd yt-media-toolkit
+cp .env.example .env          # Windows (cmd/PowerShell): copy .env.example .env
+```
+
+Open `.env` in a text editor and set `ACCESS_PASSWORD=` to a password of your choice. The browser asks for it once, and any username works. It's optional if you only use the app on this computer, but **required before using a tunnel**.
+
+### 3. Start it
+
+```bash
+docker compose up -d --build
+```
+
+The first build takes about 5–10 minutes. Then open **<http://localhost:8000>**. Settings → Server status should show everything green except cookies and proxy, which you don't need at home.
+
+### 4. Optional: open it from anywhere (Cloudflare Tunnel)
+
+**Quick tunnel (no account, URL changes on every restart):**
+
+```bash
+docker compose --profile quick-tunnel up -d --build
+docker compose logs quick-tunnel        # find the https://….trycloudflare.com line
+```
+
+Cloudflare intends quick tunnels for testing; for everyday use prefer a named tunnel.
+
+**Named tunnel (fixed address on your own domain, free Cloudflare account):**
+1. Add your domain to Cloudflare. Then go to **Zero Trust → Networks → Tunnels → Create a tunnel → Cloudflared**, give it a name, and copy the **token** shown in the install command.
+2. In the tunnel's **Public Hostname** tab, add e.g. `yt.yourdomain.com` with service type **HTTP** and URL **`app:8000`**.
+3. Put the token in `.env` as `CLOUDFLARE_TUNNEL_TOKEN=…`, then run `docker compose --profile tunnel up -d --build`.
+
+### Everyday use
+
+| Task | Command (add `--profile quick-tunnel` or `--profile tunnel` if you use one) |
+|---|---|
+| Stop | `docker compose down` |
+| Start again | `docker compose up -d` |
+| Update to the latest version | `git pull` then `docker compose up -d --build` |
+| See logs | `docker compose logs -f app` |
+
+Notes:
+- The app only works while the computer is on and awake.
+- Remote downloads use your home upload bandwidth.
+- `restart: unless-stopped` brings it back after a reboot once Docker starts.
+- To let other devices on your Wi-Fi use `http://<this-computer's-IP>:8000` without a tunnel, change the port line in `docker-compose.yml` to `"${HOST_PORT:-8000}:8000"`.
+
+---
+
 ## Deploying on Render (one service)
+
+> On Render, YouTube frequently answers with `HTTP 429` / `403` (see **YouTube bot checks**), because Render's shared IPs are rate-limited. Running it at home avoids this.
+
 
 A single Render **web service** runs everything. The multi-stage `Dockerfile` builds the React UI with Node, then the Python image serves it together with the API on the same URL. No CORS settings, no second service, and no frontend environment variables are needed.
 
@@ -251,6 +317,7 @@ Check the status under **Settings → Server status**.
 ## Security notes
 
 - URLs are validated and normalized server-side. Only the 11-character video ID is kept, and yt-dlp only ever receives `https://www.youtube.com/watch?v=<id>` with its extractor restricted to `youtube`. Thumbnails are fetched only from `https://i*.ytimg.com` without following redirects. Together these block SSRF.
+- Optional `ACCESS_PASSWORD` puts the whole app (UI, API, downloads) behind a browser login (HTTP Basic auth, any username). Repeated wrong passwords are rate-limited. Always set it when the app is reachable from the internet. `/api/health` stays open for container health checks.
 - No shell is used anywhere. FFmpeg and FFprobe run with argument arrays.
 - Each job returns a random access token. Job status, cancel, ZIP and delete require it via the `X-Job-Token` header. Missing jobs and wrong tokens give the same 404.
 - Files are only reachable through HMAC-signed, expiring links that reference random file IDs mapped server-side. Paths are re-checked to stay inside the job directory. Inline previews are served with `nosniff` and a sandboxing CSP.
@@ -275,6 +342,10 @@ Check the status under **Settings → Server status**.
 | 4K/1440p MP4 is slow | That tier needs an H.264 re-encode. Choose WebM, or set a faster `X264_PRESET` (e.g. `ultrafast`). |
 | "This job no longer exists" | The job expired (`RETENTION_MINUTES`) or the server restarted. Process again. |
 | Download links return 403 | Links expire after `DOWNLOAD_LINK_TTL_MINUTES`, or the server restarted without a fixed `SECRET_KEY`. Refresh the page and re-run. |
+| Home: <http://localhost:8000> doesn't load | Check Docker Desktop is running and `docker compose ps` shows `app` as `healthy` (first start takes ~30 s). Look at `docker compose logs app`. |
+| Home: `exec /app/docker-entrypoint.sh: no such file or directory` | The script got Windows line endings. Run `git pull` (the repo now forces LF), then `docker compose up -d --build`. |
+| Home: browser keeps asking for the password | Use the `ACCESS_PASSWORD` from `.env` (any username). After changing it, run `docker compose up -d` to apply. |
+| Quick tunnel URL stopped working | Quick-tunnel URLs change on every restart. Get the new one with `docker compose logs quick-tunnel`, or use a named tunnel. |
 | Debugging | `LOG_LEVEL=DEBUG` logs yt-dlp and FFmpeg details server-side. |
 
 ## Legal

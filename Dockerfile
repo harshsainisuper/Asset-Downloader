@@ -44,6 +44,8 @@ COPY --from=potserver /app /opt/bgutil
 
 COPY backend/app ./app
 COPY backend/docker-entrypoint.sh /app/docker-entrypoint.sh
+# Tolerate Windows checkouts (CRLF line endings, lost executable bit).
+RUN sed -i 's/\r$//' /app/docker-entrypoint.sh && chmod 0755 /app/docker-entrypoint.sh
 # The API serves the UI from /app/frontend/dist (same origin, so no CORS setup needed).
 COPY --from=frontend /src/frontend/dist /app/frontend/dist
 

@@ -24,7 +24,7 @@ from .media.ffmpeg import ffmpeg_version
 from .media.pot_provider import BgutilSupervisor
 from .media.provider import MediaProvider
 from .media.ytdlp_provider import YtDlpProvider
-from .security import BodySizeLimitMiddleware, RateLimiter
+from .security import BasicAuthMiddleware, BodySizeLimitMiddleware, RateLimiter
 from .transcripts.stt import SttProvider, get_stt_provider
 
 log = logging.getLogger("app")
@@ -64,6 +64,8 @@ def create_app(
             log.warning("No JavaScript runtime (deno/node) found for yt-dlp; YouTube downloads may fail. See README.")
         if diag.get("cookies_status") in ("missing", "unreadable"):
             log.warning("YouTube cookies file is %s; continuing without cookies.", diag["cookies_status"])
+        if settings.app_env == "production" and not settings.access_password:
+            log.warning("ACCESS_PASSWORD is not set: anyone who can reach this server can use it.")
         app.state.pot = await _start_pot_provider(settings)
         await app.state.manager.start()
         log.info("YT Media Toolkit started (provider=%s, stt=%s, pot=%s, cookies=%s, proxy=%s, temp=%s)",
@@ -97,6 +99,10 @@ def create_app(
         allow_methods=["GET", "POST", "DELETE"],
         allow_headers=["Content-Type", "X-Job-Token"],
     )
+    if settings.access_password:
+        # Added last, so it runs first: nothing is reachable without the password.
+        app.add_middleware(BasicAuthMiddleware, password=settings.access_password,
+                           trust_proxy=settings.trust_proxy_headers)
 
     @app.exception_handler(AppError)
     async def _app_error(_: Request, exc: AppError) -> JSONResponse:

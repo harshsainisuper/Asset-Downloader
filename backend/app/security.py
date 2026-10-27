@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import secrets
@@ -126,3 +127,58 @@ class BodySizeLimitMiddleware:
 
 class _BodyTooLarge(Exception):
     pass
+
+
+class BasicAuthMiddleware:
+    """Optional password protection for the whole app: UI, API and downloads.
+
+    Uses HTTP Basic auth (any username), which browsers prompt for natively and then send
+    with every same-origin request, including signed download links. Repeated wrong
+    passwords are rate-limited per client. Health checks and CORS preflights stay open.
+    """
+
+    EXEMPT_PATHS = frozenset({"/api/health"})
+    REALM = 'Basic realm="YT Media Toolkit", charset="UTF-8"'
+
+    def __init__(self, app: ASGIApp, password: str, trust_proxy: bool = False,
+                 max_failures_per_minute: int = 20) -> None:
+        self.app = app
+        self._password = password.encode("utf-8")
+        self.trust_proxy = trust_proxy
+        self.max_failures = max_failures_per_minute
+        self.limiter = RateLimiter()
+
+    def _check(self, header: str | None) -> bool | None:
+        """True: correct password. False: wrong credentials. None: no credentials sent."""
+        if not header or not header[:6].lower() == "basic ":
+            return None
+        try:
+            decoded = base64.b64decode(header[6:].strip(), validate=True).decode("utf-8")
+        except (ValueError, UnicodeDecodeError):
+            return False
+        _, sep, password = decoded.partition(":")
+        return bool(sep) and hmac.compare_digest(password.encode("utf-8"), self._password)
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if (scope["type"] != "http" or scope.get("method") == "OPTIONS"
+                or scope.get("path") in self.EXEMPT_PATHS):
+            await self.app(scope, receive, send)
+            return
+        request = Request(scope)
+        result = self._check(request.headers.get("authorization"))
+        if result is True:
+            await self.app(scope, receive, send)
+            return
+        if result is False and not self.limiter.allow(
+                "auth-fail", client_ip(request, self.trust_proxy), self.max_failures):
+            response = JSONResponse(
+                {"error": {"code": "rate_limited", "message": "Too many wrong passwords. Try again in a minute."}},
+                status_code=429,
+            )
+        else:
+            response = JSONResponse(
+                {"error": {"code": "auth_required", "message": "Password required."}},
+                status_code=401,
+                headers={"WWW-Authenticate": self.REALM},
+            )
+        await response(scope, receive, send)
