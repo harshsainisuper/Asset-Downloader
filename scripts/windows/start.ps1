@@ -22,7 +22,9 @@ function Install-Package([string]$Id, [string]$What, [string]$ManualUrl) {
         throw "$What is not installed and 'winget' is unavailable. Install it from $ManualUrl, then run this again."
     }
     Write-Host "`n[setup] Installing $What (one time) ..." -ForegroundColor Cyan
-    winget install --id $Id --exact --silent --accept-source-agreements --accept-package-agreements
+    # --source winget: all packages used here live in the community catalogue. Without it,
+    # a failing Microsoft Store source (common behind proxies) makes winget refuse to pick one.
+    winget install --id $Id --exact --source winget --silent --accept-source-agreements --accept-package-agreements
     if ($LASTEXITCODE -ne 0) {
         throw "winget could not install $What (exit code $LASTEXITCODE). Install it from $ManualUrl, then run this again."
     }
