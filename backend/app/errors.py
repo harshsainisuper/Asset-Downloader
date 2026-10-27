@@ -58,7 +58,11 @@ _PROVIDER_ERROR_RULES: list[tuple[re.Pattern[str], str, str]] = [
      "geo_restricted", "This video is not available in the server's region."),
     (re.compile(r"drm|protected content", re.I),
      "drm_protected", "This video is DRM-protected and cannot be downloaded."),
-    (re.compile(r"not a bot|sign in to confirm|HTTP Error 429|too many requests|rate.?limit", re.I),
+    # "Failed to extract any player response" / "All player responses are invalid": YouTube
+    # rejected every player client, which yt-dlp attributes to the server's IP being blocked.
+    (re.compile(r"not a bot|sign in to confirm|HTTP Error 429|too many requests|rate.?limit|"
+                r"failed to extract any player response|player responses are invalid|"
+                r"ip is likely being blocked", re.I),
      "provider_blocked",
      "YouTube is blocking requests from this server's network (bot check or rate limit). "
      "The server administrator can fix this with YouTube cookies, a PO-token provider or a "

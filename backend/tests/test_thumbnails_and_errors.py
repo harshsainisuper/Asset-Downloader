@@ -88,6 +88,10 @@ def test_non_image_responses_rejected(tmp_path):
     ("The uploader has not made this video available in your country", "geo_restricted"),
     ("Sign in to confirm you're not a bot", "provider_blocked"),
     ("HTTP Error 429: Too Many Requests", "provider_blocked"),
+    ("Failed to extract any player response; please report this issue on  https://github.com/yt-dlp/yt-dlp/issues?q= ,"
+     " filling out the appropriate issue template. Confirm you are on the latest version using  yt-dlp -U",
+     "provider_blocked"),
+    ("All player responses are invalid. Your IP is likely being blocked by Youtube", "provider_blocked"),
     ("Requested format is not available", "format_unavailable"),
     ("Premieres in 3 hours", "not_started"),
     ("Unable to download API page: timed out", "network_error"),
