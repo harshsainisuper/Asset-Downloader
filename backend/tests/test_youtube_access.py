@@ -190,3 +190,16 @@ def test_cookie_status(tmp_path, monkeypatch, setup, expected):
     assert diag["cookies_configured"] is (expected == "configured")
     assert diag["cookies_file_missing"] is (expected in ("missing", "unreadable"))
     assert (provider.cookies_path is not None) is (expected == "configured")
+
+
+def test_js_runtime_detection_finds_pip_installed_deno_off_path(tmp_path, monkeypatch):
+    """Deno from PyPI lives in the virtualenv, which is often not on PATH (e.g. run_local.py)."""
+    import importlib.util
+    import shutil as _shutil
+
+    if importlib.util.find_spec("deno") is None:
+        pytest.skip("deno PyPI package not installed")
+    monkeypatch.setenv("PATH", "/nonexistent")
+    assert _shutil.which("deno") is None
+    diag = _provider(tmp_path, ytdlp_js_runtimes="deno").diagnostics()
+    assert diag["js_runtimes"] == {"deno": True} and diag["js_runtime_available"] is True

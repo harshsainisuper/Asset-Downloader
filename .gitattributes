@@ -1,3 +1,5 @@
 # Shell scripts must keep LF line endings, even on Windows checkouts (they run in Linux containers).
 *.sh text eol=lf
 Dockerfile text eol=lf
+# Windows batch files must keep CRLF exactly as committed (also in GitHub ZIP downloads).
+*.bat -text

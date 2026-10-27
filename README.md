@@ -48,9 +48,12 @@ image, deployed as one Render web service:
 .
 ├── Dockerfile / .dockerignore   one image: builds the UI (Node) + API (FFmpeg, Deno, yt-dlp)
 ├── docker-compose.yml           run at home, optionally behind a Cloudflare Tunnel
+├── start-windows.bat            run at home on Windows without Docker (double-click)
+├── start-windows-tunnel.bat     same, plus a public Cloudflare quick-tunnel URL
+├── scripts/run_local.py         cross-platform no-Docker launcher (setup + start)
 ├── render.yaml                  Render blueprint: a single web service
 ├── .env.example                 configuration template (no secrets)
-├── scripts/dev.sh               start backend + frontend dev servers
+├── scripts/dev.sh               start backend + frontend dev servers (development)
 ├── backend/
 │   ├── requirements.txt         runtime deps   (requirements-dev.txt: tests/lint)
 │   ├── requirements-stt-local.txt  optional local Whisper (faster-whisper)
@@ -157,16 +160,33 @@ Backend tests need no network. They use a fake provider that serves FFmpeg-gener
 
 ## Run it at home (recommended)
 
-YouTube blocks or rate-limits most cloud servers, including Render's. Your home internet connection doesn't have that problem, so running the app on your own computer is the free and reliable option: **no cookies and no proxy needed**. Docker runs everything (FFmpeg, yt-dlp, the PO-token server). A free **Cloudflare Tunnel** can make it reachable from your phone or anywhere else without opening router ports.
+YouTube blocks or rate-limits most cloud servers, including Render's. Your home internet connection doesn't have that problem, so running the app on your own computer is the free and reliable option: **no cookies and no proxy needed**. A free **Cloudflare Tunnel** can make it reachable from your phone or anywhere else without opening router ports.
 
-### 1. Install Docker
+There are two ways to run it: **without Docker** (simplest, recommended on Windows) or **with Docker**.
+
+### Without Docker (Windows: double-click)
+
+1. Download the code. Either click **Code → Download ZIP** on GitHub and extract it, or run `git clone https://github.com/harshsainisuper/yt-media-toolkit.git`.
+2. Double-click **`start-windows.bat`** in the extracted folder.
+   - The first run installs whatever is missing with Windows' built-in `winget`: Python 3.13, FFmpeg, and Node.js (needed once, to build the web page). It then installs the Python packages and builds the interface. This takes about 5–10 minutes; accept any Windows installer prompts.
+   - When it prints `Ready: http://localhost:8000`, your browser opens the app. Keep the black window open while you use it, and close it (or press Ctrl+C) to stop.
+   - Later starts take a few seconds.
+3. **Use it from your phone or anywhere else:** open `.env` (created on first run) in Notepad and set `ACCESS_PASSWORD=` to a password. Then double-click **`start-windows-tunnel.bat`**. It installs Cloudflare's `cloudflared` once and prints a public `https://….trycloudflare.com` address. Open that on any device and log in with the password (any username). The address changes each time you start it.
+
+If a step fails with "installed but cannot be found yet", close the window and double-click the `.bat` again (Windows sometimes needs a fresh window to see newly installed programs). Without `winget` (very old Windows 10), install [Python](https://www.python.org/downloads/windows/), [FFmpeg](https://www.gyan.dev/ffmpeg/builds/) and [Node.js](https://nodejs.org/) manually and run it again.
+
+**macOS / Linux without Docker:** install Python 3.11+, FFmpeg and Node.js (`brew install python ffmpeg node`, or your distro's packages), then run `python3 scripts/run_local.py` (add `--tunnel` for a public URL; needs `cloudflared`).
+
+### With Docker
+
+#### 1. Install Docker
 
 - **Windows / macOS:** install [Docker Desktop](https://www.docker.com/products/docker-desktop/) and start it. On Windows, accept the WSL 2 setup it offers.
 - **Linux:** install Docker Engine with the Compose plugin.
 
 Works on Intel/AMD and ARM (Apple Silicon, Raspberry Pi 4/5 with a 64-bit OS).
 
-### 2. Get the code and settings
+#### 2. Get the code and settings
 
 ```bash
 git clone https://github.com/harshsainisuper/yt-media-toolkit.git
@@ -176,7 +196,7 @@ cp .env.example .env          # Windows (cmd/PowerShell): copy .env.example .env
 
 Open `.env` in a text editor and set `ACCESS_PASSWORD=` to a password of your choice. The browser asks for it once, and any username works. It's optional if you only use the app on this computer, but **required before using a tunnel**.
 
-### 3. Start it
+#### 3. Start it
 
 ```bash
 docker compose up -d --build
@@ -184,7 +204,7 @@ docker compose up -d --build
 
 The first build takes about 5–10 minutes. Then open **<http://localhost:8000>**. Settings → Server status should show everything green except cookies and proxy, which you don't need at home.
 
-### 4. Optional: open it from anywhere (Cloudflare Tunnel)
+#### 4. Optional: open it from anywhere (Cloudflare Tunnel)
 
 **Quick tunnel (no account, URL changes on every restart):**
 
@@ -200,7 +220,7 @@ Cloudflare intends quick tunnels for testing; for everyday use prefer a named tu
 2. In the tunnel's **Public Hostname** tab, add e.g. `yt.yourdomain.com` with service type **HTTP** and URL **`app:8000`**.
 3. Put the token in `.env` as `CLOUDFLARE_TUNNEL_TOKEN=…`, then run `docker compose --profile tunnel up -d --build`.
 
-### Everyday use
+#### Everyday use (Docker)
 
 | Task | Command (add `--profile quick-tunnel` or `--profile tunnel` if you use one) |
 |---|---|

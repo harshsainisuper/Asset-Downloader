@@ -421,8 +421,21 @@ class YtDlpProvider(MediaProvider):
             raise AppError("captions_unavailable", "YouTube did not return the selected caption track.", 502)
         return files[0]
 
+    @functools.cached_property
+    def available_js_runtimes(self) -> dict[str, bool]:
+        """Which JS runtimes yt-dlp itself can use. This includes Deno installed from PyPI
+        inside a virtualenv that is not on PATH, which a plain PATH lookup would miss."""
+        names = self._js_runtimes()
+        try:
+            with yt_dlp.YoutubeDL({"quiet": True, "js_runtimes": names, "logger": _YtdlpLogger()}) as ydl:
+                found = ydl._js_runtimes  # yt-dlp's own detection (private API; fallback below)
+            return {name: bool(rt and rt.info) for name, rt in found.items()}
+        except Exception:  # noqa: BLE001
+            log.debug("yt-dlp JS runtime detection failed; falling back to PATH lookup", exc_info=True)
+            return {name: bool(shutil.which(name)) for name in names}
+
     def diagnostics(self) -> dict[str, object]:
-        runtimes = {name: bool(shutil.which(name)) for name in self._js_runtimes()}
+        runtimes = self.available_js_runtimes
         try:
             plugin_version: str | None = importlib.metadata.version("bgutil-ytdlp-pot-provider")
         except importlib.metadata.PackageNotFoundError:
