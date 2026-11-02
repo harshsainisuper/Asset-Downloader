@@ -34,6 +34,17 @@ export class ApiError extends Error {
   }
 }
 
+/** A 404 without the backend's JSON error body means the request never reached the API. */
+function noBackendMessage(): string {
+  if (!API_BASE) {
+    return (
+      "This site is not connected to the download server. If it is hosted on Vercel, set VITE_API_BASE_URL " +
+      "to your backend address (e.g. https://your-service.onrender.com) and redeploy."
+    );
+  }
+  return `${API_BASE} did not answer like the download server. Check that VITE_API_BASE_URL is the backend's address, without /api at the end.`;
+}
+
 async function request<T>(path: string, init: RequestInit = {}, token?: string): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body) headers.set("Content-Type", "application/json");
@@ -57,6 +68,7 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string):
   }
   if (!resp.ok) {
     const err = (body as { error?: { code?: string; message?: string } } | null)?.error;
+    if (!err && resp.status === 404) throw new ApiError("no_backend", noBackendMessage(), 404);
     throw new ApiError(err?.code ?? "http_error", err?.message ?? `Request failed (HTTP ${resp.status}).`, resp.status);
   }
   return body as T;
