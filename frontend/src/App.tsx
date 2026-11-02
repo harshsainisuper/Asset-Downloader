@@ -9,7 +9,7 @@ import { ApiError, api } from "./lib/api";
 import { loadDefaults, saveDefaults } from "./lib/prefs";
 import { ALL_SELECTED, EMPTY_SELECTION, adaptSettings, buildOutputs, canProcess, selectedKinds } from "./lib/selection";
 import type { Job, JobFile, OutputKind, OutputSettings, Selection, ServerConfig, VideoInfo } from "./lib/types";
-import { checkYoutubeUrl } from "./lib/youtube";
+import { checkMediaUrl } from "./lib/mediaUrl";
 
 const POLL_MS = 800;
 
@@ -51,7 +51,7 @@ export default function App() {
   const [configError, setConfigError] = useState<string | null>(null);
   const infoAbort = useRef<AbortController | null>(null);
 
-  const urlCheck = useMemo(() => checkYoutubeUrl(url), [url]);
+  const urlCheck = useMemo(() => checkMediaUrl(url), [url]);
   // Info is only valid for the URL it was fetched for.
   const currentInfo = info && infoUrl === url.trim() ? info : null;
 
@@ -194,7 +194,7 @@ export default function App() {
           />
         )}
         <footer className="px-1 pt-2 pb-8 text-xs leading-relaxed text-zinc-600">
-          Only download content you own or have permission to use, and follow YouTube's Terms of Service and copyright
+          Only download content you own or have permission to use, and follow YouTube's and Instagram's terms and copyright
           law. Private, members-only, age-restricted, paid and DRM-protected videos are not supported.
         </footer>
       </main>

@@ -4,7 +4,7 @@ Not every video has a ``maxresdefault`` image, and YouTube sometimes answers mis
 variants with a 120x90 placeholder, so every candidate is fetched and decoded to
 verify its real dimensions before the best one is chosen.
 
-Only HTTPS URLs on YouTube's image CDN are fetched, and redirects are not followed.
+Only HTTPS URLs on YouTube's or Instagram's image CDNs are fetched, and redirects are not followed.
 """
 
 from __future__ import annotations
@@ -28,7 +28,13 @@ from .models import VideoInfo
 log = logging.getLogger(__name__)
 
 ThumbnailFormat = Literal["jpg", "original"]
-ALLOWED_THUMB_URL = re.compile(r"^https://i[0-9]?\.ytimg\.com/[A-Za-z0-9_\-/.]+(\?[A-Za-z0-9_\-=&%.]*)?$")
+ALLOWED_THUMB_URL = {
+    "youtube": re.compile(r"^https://i[0-9]?\.ytimg\.com/[A-Za-z0-9_\-/.]+(\?[A-Za-z0-9_\-=&%.]*)?$"),
+    "instagram": re.compile(
+        # Signed query strings vary a lot; the fixed host is what matters for SSRF.
+        r"^https://(?:[a-z0-9-]+\.)*(?:cdninstagram\.com|fbcdn\.net)/[A-Za-z0-9_\-/.]+(\?[^\s#\\]*)?$"
+    ),
+}
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 # Known variants in rough order of expected size.
 KNOWN_VARIANTS = ("maxresdefault", "hq720", "oardefault", "sddefault", "hqdefault", "mqdefault", "default")
@@ -63,21 +69,23 @@ def make_client() -> httpx.AsyncClient:
 def candidate_urls(info: VideoInfo) -> list[str]:
     vid = info.video_id
     urls: list[str] = []
-    for name in KNOWN_VARIANTS:
-        urls.append(f"https://i.ytimg.com/vi/{vid}/{name}.jpg")
-        urls.append(f"https://i.ytimg.com/vi_webp/{vid}/{name}.webp")
+    if info.platform == "youtube":
+        for name in KNOWN_VARIANTS:
+            urls.append(f"https://i.ytimg.com/vi/{vid}/{name}.jpg")
+            urls.append(f"https://i.ytimg.com/vi_webp/{vid}/{name}.webp")
     for thumb in info.thumbnails:
         urls.append(thumb.url)
+    allowed = ALLOWED_THUMB_URL[info.platform]
     seen: set[str] = set()
     result = []
     for url in urls:
-        if url not in seen and ALLOWED_THUMB_URL.match(url):
+        if url not in seen and allowed.match(url):
             seen.add(url)
             result.append(url)
     return result
 
 
-async def _fetch(client: httpx.AsyncClient, url: str) -> ThumbnailCandidate | None:
+async def fetch_candidate(client: httpx.AsyncClient, url: str) -> ThumbnailCandidate | None:
     try:
         async with client.stream("GET", url) as resp:
             if resp.status_code != 200 or not resp.headers.get("content-type", "").startswith("image/"):
@@ -103,7 +111,7 @@ async def _fetch(client: httpx.AsyncClient, url: str) -> ThumbnailCandidate | No
     if fmt not in _PIL_EXT:
         return None
     # YouTube's "missing image" placeholder is 120x90; only accept that size for "default".
-    if (width, height) == (120, 90) and "/default." not in url:
+    if (width, height) == (120, 90) and "ytimg.com/" in url and "/default." not in url:
         return None
     return ThumbnailCandidate(url=url, data=bytes(buf), width=width, height=height, pil_format=fmt)
 
@@ -133,7 +141,7 @@ async def download_best_thumbnail(
     async def guarded(url: str) -> ThumbnailCandidate | None:
         nonlocal done
         async with sem:
-            result = await _fetch(client, url)
+            result = await fetch_candidate(client, url)
         done += 1
         if on_progress:
             on_progress(done / len(urls) * 0.9)

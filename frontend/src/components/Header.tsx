@@ -19,7 +19,7 @@ export function Header({ onOpenSettings }: { onOpenSettings: () => void }) {
           <div className="min-w-0">
             <h1 className="text-base leading-tight font-semibold tracking-tight text-zinc-50">YT Media Toolkit</h1>
             <p className="truncate text-xs text-zinc-500">
-              Download video, audio, thumbnails and transcripts from YouTube videos and Shorts
+              Download video, audio, thumbnails and transcripts from YouTube and Instagram
             </p>
           </div>
         </div>

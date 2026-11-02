@@ -400,3 +400,19 @@ def test_validation_errors_are_clean(client):
 def test_app_error_class_is_safe():
     err = AppError("x", "msg", 418)
     assert err.status_code == 418 and err.message == "msg"
+
+
+def test_instagram_reel_info_and_video_job(client, provider):
+    ig = "C9xYz_AbC-1"
+    provider.info = make_info(video_id=ig, platform="instagram", title="Video by someone",
+                              webpage_url=f"https://www.instagram.com/p/{ig}/", thumbnail_url=None)
+    url = f"https://www.instagram.com/reel/{ig}/?igsh=abc"
+    info = client.post("/api/info", json={"url": url}).json()
+    assert (info["platform"], info["video_id"]) == ("instagram", ig)
+    assert info["captions"]["tracks"] == []
+
+    job_id, token, _ = create(client, {"video": {"quality": "best", "format": "mp4"}}, url=url)
+    done = wait_for_job(client, job_id, token)
+    assert done["status"] == "completed", done
+    [file] = done["tasks"][0]["files"]
+    assert file["name"].endswith(".mp4") and "Video by someone" in file["name"]

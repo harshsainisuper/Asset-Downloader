@@ -113,3 +113,38 @@ def test_safe_filenames():
     assert len(safe_stem("é" * 500).encode()) <= 150
     assert build_filename("My/Video", "abc", "1080p", "mp4") == "My Video [1080p].mp4"
     assert build_filename(None, "abc", "", "MP3") == "abc.mp3"
+
+
+def test_instagram_candidates_use_only_instagram_cdn():
+    info = make_info(platform="instagram", video_id="C9xYz_AbC-1", thumbnails=[
+        Thumbnail("https://scontent-fra5-1.cdninstagram.com/v/t51.2885-15/1_n.jpg?stp=dst-jpg_e35&_nc_ht=x&oh=00_A&oe=6A"),
+        Thumbnail("https://instagram.fxyz1-1.fna.fbcdn.net/v/t51/2_n.jpg"),
+        Thumbnail("https://i.ytimg.com/vi/x/custom.jpg"),
+        Thumbnail("https://cdninstagram.com.evil.com/x.jpg"),
+        Thumbnail("https://evil.com/cdninstagram.com/x.jpg"),
+    ])
+    urls = candidate_urls(info)
+    assert len(urls) == 2
+    assert all(".cdninstagram.com/" in u or ".fbcdn.net/" in u for u in urls)
+
+
+@pytest.mark.parametrize("text,code", [
+    ("ERROR: [Instagram] X: There is no video in this post", "no_video"),
+    ("ERROR: [Instagram] X: This content is only available for registered users who follow this account",
+     "video_private"),
+    ("ERROR: [Instagram] X: The webpage request was redirected to the login page. You have exceeded the "
+     "rate-limit for accessing posts anonymously", "provider_blocked"),
+    ("ERROR: [Instagram] X: Instagram sent an empty media response.", "provider_blocked"),
+    ("ERROR: [Instagram] X: Unable to download webpage: HTTP Error 404: Not Found", "video_unavailable"),
+])
+def test_instagram_errors_are_mapped(text, code):
+    err = map_provider_error(Exception(text), "instagram")
+    assert err.code == code
+    assert "YouTube" not in err.message
+
+
+def test_instagram_blocked_message_mentions_instagram_cookies():
+    err = map_provider_error(Exception("HTTP Error 429: Too Many Requests"), "instagram")
+    assert err.code == "provider_blocked" and "Instagram" in err.message and "cookies" in err.message
+    generic = map_provider_error(Exception("something odd"), "instagram")
+    assert generic.code == "provider_error" and generic.message.startswith("Instagram")

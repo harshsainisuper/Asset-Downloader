@@ -24,6 +24,7 @@ def info_payload(info: VideoInfo, stt: SttProvider | None) -> dict[str, Any]:
     default = default_track(info)
     return {
         "video_id": info.video_id,
+        "platform": info.platform,
         "title": info.title,
         "channel": info.channel,
         "duration": info.duration,

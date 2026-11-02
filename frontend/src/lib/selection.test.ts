@@ -4,6 +4,7 @@ import type { OutputSettings, VideoInfo } from "./types";
 
 const info: VideoInfo = {
   video_id: "dQw4w9WgXcQ",
+  platform: "youtube",
   title: "t",
   channel: null,
   duration: 10,

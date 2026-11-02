@@ -76,7 +76,8 @@ class Settings(BaseSettings):
     ytdlp_socket_timeout: int = Field(default=20, ge=1)
 
     # --- YouTube bot checks (servers on datacenter IPs) ------------------------------
-    # Netscape-format cookies.txt exported from a YouTube account (use a secondary account).
+    # Netscape-format cookies.txt exported from a YouTube and/or Instagram account (use secondary
+    # accounts). One file can hold cookies for both sites.
     # On Render, upload it as a Secret File and set /etc/secrets/cookies.txt.
     ytdlp_cookies_file: str = ""
     # Outbound proxy for YouTube traffic, e.g. http://user:pass@host:port or socks5://host:1080.

@@ -135,3 +135,119 @@ def test_download_cancelled(ytdlp, local_server, tmp_path):
 
     with pytest.raises(CancelledByUser):
         anyio.run(run)
+
+
+# --------------------------------------------------------------------------- Instagram
+
+IG_ID = "C9xYz_AbC-1"
+IG_THUMB = "https://scontent-fra5-1.cdninstagram.com/v/t51.2885-15/1_n.jpg?stp=dst-jpg&oh=00_A&oe=6A"
+
+
+def instagram_raw(base: str) -> dict:
+    """Shaped like yt-dlp's Instagram extractor output: progressive MP4s without codec info + DASH."""
+    return {
+        "id": IG_ID,
+        "title": "Video by someone",
+        "channel": "someone",
+        "duration": 12.5,
+        "extractor": "Instagram",
+        "extractor_key": "Instagram",
+        "webpage_url": f"https://www.instagram.com/p/{IG_ID}/",
+        "http_headers": {"Referer": "https://www.instagram.com/"},
+        "thumbnail": IG_THUMB,
+        "thumbnails": [{"url": "https://evil.com/x.jpg"},
+                       {"url": IG_THUMB.replace("1_n", "small"), "width": 150, "height": 266},
+                       {"url": IG_THUMB, "width": 720, "height": 1280}],
+        "formats": [
+            {"format_id": "101", "url": f"{base}/video.mp4", "ext": "mp4", "width": 720, "height": 1280,
+             "protocol": "https"},
+            {"format_id": "dash-v", "url": f"{base}/video.mp4", "ext": "mp4", "vcodec": "avc1.4d401f",
+             "acodec": "none", "width": 1080, "height": 1920, "protocol": "http"},
+            {"format_id": "dash-a", "url": f"{base}/audio.m4a", "ext": "m4a", "vcodec": "none",
+             "acodec": "mp4a.40.2", "abr": 128, "protocol": "http"},
+        ],
+    }
+
+
+def test_instagram_payload_is_normalized_and_plannable(ytdlp, local_server):
+    from app.media.format_selection import available_qualities, plan_audio, plan_video
+
+    info = ytdlp._normalize(instagram_raw(local_server), VideoRef(IG_ID, platform="instagram"))
+    assert info.platform == "instagram" and info.webpage_url == f"https://www.instagram.com/p/{IG_ID}/"
+    progressive = info.format_by_id("101")
+    assert progressive.vcodec == "avc1" and progressive.acodec == "mp4a"  # assumed H.264/AAC
+    assert [t.width for t in info.thumbnails] == [150, 720]  # non-Instagram host dropped
+    assert info.thumbnail_url == IG_THUMB
+    assert info.is_short  # vertical and short
+    assert [q.height for q in available_qualities(info.formats)] == [1080, 720]
+    plan = plan_video(info.formats, "best", "mp4")
+    assert (plan.video.format_id, plan.audio.format.format_id, plan.video_action) == ("dash-v", "dash-a", "copy")
+    assert plan_audio(info.formats, "m4a").action == "copy"
+
+
+def test_instagram_progressive_without_audio_stays_silent(ytdlp, local_server):
+    raw = instagram_raw(local_server)
+    raw["formats"] = [raw["formats"][0] | {"acodec": "none"}]
+    info = ytdlp._normalize(raw, VideoRef(IG_ID, platform="instagram"))
+    assert info.formats[0].vcodec == "avc1" and info.formats[0].acodec is None
+
+
+@requires_ffmpeg
+def test_instagram_download_goes_through_yt_dlp(ytdlp, local_server, tmp_path, media_files):
+    info = ytdlp._normalize(instagram_raw(local_server), VideoRef(IG_ID, platform="instagram"))
+
+    async def run():
+        return await ytdlp.download_format(info, "101", tmp_path / "src", lambda d, t: None, threading.Event())
+
+    path = anyio.run(run)
+    assert path.read_bytes() == media_files["h264"].read_bytes()
+
+
+def test_instagram_only_uses_the_instagram_extractor(ytdlp):
+    assert ytdlp._base_opts("instagram")["allowed_extractors"] == ["Instagram"]
+    assert ytdlp._base_opts()["allowed_extractors"] == ["youtube"]
+    with ytdlp._ydl(platform="instagram") as ydl:
+        assert set(ydl._ies) == {"Instagram"}
+
+
+@pytest.mark.parametrize("raw,code", [
+    ({"_type": "playlist", "id": IG_ID, "entries": []}, "unsupported_content"),
+    ({"id": "SomethingElse", "formats": []}, "video_unavailable"),
+])
+def test_instagram_extract_rejects_carousels_and_foreign_ids(ytdlp, monkeypatch, raw, code):
+    async def fake_run(fn, timeout=None):
+        return raw
+
+    monkeypatch.setattr(ytdlp, "_run", fake_run)
+    with pytest.raises(VideoUnavailableError) as exc:
+        anyio.run(ytdlp._extract_raw, VideoRef(IG_ID, platform="instagram"))
+    assert exc.value.code == code
+
+
+def test_instagram_long_shortcode_matches_its_short_form(ytdlp, monkeypatch):
+    long_code = IG_ID + "x" * 28
+
+    async def fake_run(fn, timeout=None):
+        return {"id": IG_ID, "formats": []}
+
+    monkeypatch.setattr(ytdlp, "_run", fake_run)
+    assert anyio.run(ytdlp._extract_raw, VideoRef(long_code, platform="instagram"))["id"] == IG_ID
+
+
+def test_instagram_preview_is_inlined_as_data_url(ytdlp, local_server, monkeypatch):
+    from app.media import thumbnails
+
+    fetched: list[str] = []
+
+    async def fake_fetch(client, url):
+        fetched.append(url)
+        return thumbnails.ThumbnailCandidate(url=url, data=b"\xff\xd8jpeg", width=720, height=1280, pil_format="JPEG")
+
+    async def fake_extract(ref):
+        return instagram_raw(local_server)
+
+    monkeypatch.setattr(thumbnails, "fetch_candidate", fake_fetch)
+    monkeypatch.setattr(ytdlp, "_extract_raw", fake_extract)
+    info = anyio.run(ytdlp.fetch_info, VideoRef(IG_ID, platform="instagram"))
+    assert fetched == [IG_THUMB]  # smallest variant that is at least 320 px wide
+    assert info.thumbnail_url == "data:image/jpeg;base64,/9hqcGVn"

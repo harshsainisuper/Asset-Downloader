@@ -1,9 +1,9 @@
 """MediaProvider implementation backed by yt-dlp.
 
 Security notes:
-* Only canonical ``https://www.youtube.com/watch?v=<id>`` URLs (rebuilt from a validated
-  ID) are passed to yt-dlp, and yt-dlp is restricted to its ``youtube`` extractor, so the
-  generic extractor can never be used to fetch arbitrary URLs.
+* Only canonical ``https://www.youtube.com/watch?v=<id>`` or ``https://www.instagram.com/p/<id>/``
+  URLs (rebuilt from a validated ID) are passed to yt-dlp, and yt-dlp is restricted to that
+  platform's extractor, so the generic extractor can never be used to fetch arbitrary URLs.
 * No cookies or account credentials are used: private, members-only and age-restricted
   videos are reported as unsupported rather than circumvented. DRM formats are skipped.
 """
@@ -11,6 +11,7 @@ Security notes:
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import copy
 import functools
@@ -32,13 +33,19 @@ from yt_dlp.utils import DownloadCancelled, DownloadError, ExtractorError
 
 from ..config import Settings
 from ..errors import AppError, CancelledByUser, VideoUnavailableError, map_provider_error
-from ..url_validation import VideoRef
+from ..url_validation import PLATFORM_NAMES, VideoRef
+from . import thumbnails
 from .provider import ByteProgress, MediaProvider
 from .models import CaptionTrack, MediaFormat, Thumbnail, VideoInfo
 
 log = logging.getLogger(__name__)
 
-_ALLOWED_THUMB_HOSTS = re.compile(r"^https://i[0-9]?\.ytimg\.com/", re.I)
+_ALLOWED_THUMB_HOSTS = {
+    "youtube": re.compile(r"^https://i[0-9]?\.ytimg\.com/", re.I),
+    "instagram": re.compile(r"^https://(?:[a-z0-9-]+\.)*(?:cdninstagram\.com|fbcdn\.net)/", re.I),
+}
+# yt-dlp extractor names (matched as regexes) allowed for each platform.
+_EXTRACTORS = {"youtube": ["youtube"], "instagram": ["Instagram"]}
 _CAPTION_FORMAT_PREF = "json3/vtt/srv3/best"
 # Where Render mounts Secret Files for Docker services; used when YTDLP_COOKIES_FILE is unset.
 DEFAULT_COOKIE_PATHS = (Path("/etc/secrets/cookies.txt"),)
@@ -76,13 +83,13 @@ class YtDlpProvider(MediaProvider):
         names = [n.strip().lower() for n in self.settings.ytdlp_js_runtimes.split(",") if n.strip()]
         return {n: {} for n in names if n in ("deno", "node", "bun", "quickjs")}
 
-    def _base_opts(self) -> dict[str, Any]:
+    def _base_opts(self, platform: str = "youtube") -> dict[str, Any]:
         opts: dict[str, Any] = {
             "quiet": True,
             "no_warnings": False,
             "noprogress": True,
             "noplaylist": True,
-            "allowed_extractors": ["youtube"],
+            "allowed_extractors": _EXTRACTORS[platform],
             "socket_timeout": self.settings.ytdlp_socket_timeout,
             "logger": _YtdlpLogger(),
             "retries": 3,
@@ -129,8 +136,8 @@ class YtDlpProvider(MediaProvider):
         return self._cookie_candidate() if self.cookie_status == "configured" else None
 
     @contextlib.contextmanager
-    def _ydl(self, extra: dict[str, Any] | None = None) -> Iterator[yt_dlp.YoutubeDL]:
-        opts = self._base_opts() | (extra or {})
+    def _ydl(self, extra: dict[str, Any] | None = None, platform: str = "youtube") -> Iterator[yt_dlp.YoutubeDL]:
+        opts = self._base_opts(platform) | (extra or {})
         cookie_copy: Path | None = None
         if self.cookies_path:
             # yt-dlp rewrites its cookie file on exit. Give every instance a private copy:
@@ -163,7 +170,7 @@ class YtDlpProvider(MediaProvider):
     async def fetch_info(self, ref: VideoRef) -> VideoInfo:
         ttl = self.settings.info_cache_seconds
         with self._cache_lock:
-            cached = self._info_cache.get(ref.video_id)
+            cached = self._info_cache.get(ref.cache_key)
             if cached and time.monotonic() - cached[0] < ttl:
                 info = copy.copy(cached[1])
                 info.is_short = info.is_short or ref.is_short
@@ -171,30 +178,56 @@ class YtDlpProvider(MediaProvider):
 
         raw = await self._extract_raw(ref)
         info = self._normalize(raw, ref)
+        if info.platform == "instagram":
+            info.thumbnail_url = await self._inline_preview(info)
         with self._cache_lock:
             now = time.monotonic()
             for key in [k for k, (ts, _) in self._info_cache.items() if now - ts >= ttl]:
                 del self._info_cache[key]
-            self._info_cache[ref.video_id] = (now, info)
+            self._info_cache[ref.cache_key] = (now, info)
         return info
 
+    @staticmethod
+    async def _inline_preview(info: VideoInfo) -> str | None:
+        """Instagram's CDN refuses cross-origin image embedding, so the preview is sent as a data URL."""
+        sized = sorted((t for t in info.thumbnails if t.width), key=lambda t: t.width or 0)
+        pick = next((t.url for t in sized if (t.width or 0) >= 320), info.thumbnail_url)
+        if not pick or not thumbnails.ALLOWED_THUMB_URL["instagram"].match(pick):
+            return None
+        async with thumbnails.make_client() as client:
+            found = await thumbnails.fetch_candidate(client, pick)
+        if found is None:
+            return None
+        mime = {"JPEG": "image/jpeg", "WEBP": "image/webp", "PNG": "image/png"}[found.pil_format]
+        return f"data:{mime};base64,{base64.b64encode(found.data).decode()}"
+
     async def _extract_raw(self, ref: VideoRef) -> dict[str, Any]:
+        site = PLATFORM_NAMES[ref.platform]
+
         def work() -> dict[str, Any]:
-            with self._ydl() as ydl:
+            with self._ydl(platform=ref.platform) as ydl:
                 data = ydl.extract_info(ref.canonical_url, download=False)
                 return yt_dlp.YoutubeDL.sanitize_info(data, remove_private_keys=True)
 
         try:
             raw = await self._run(work, timeout=self.settings.info_timeout_seconds)
         except TimeoutError:
-            raise AppError("timeout", "YouTube took too long to respond. Please try again.", 504) from None
+            raise AppError("timeout", f"{site} took too long to respond. Please try again.", 504) from None
         except (DownloadError, ExtractorError) as exc:
-            log.warning("info extraction failed for %s: %s", ref.video_id, exc)
-            raise map_provider_error(exc) from None
+            log.warning("info extraction failed for %s: %s", ref.cache_key, exc)
+            raise map_provider_error(exc, ref.platform) from None
 
+        if isinstance(raw, dict) and ref.platform == "instagram" and raw.get("_type") == "playlist":
+            raise VideoUnavailableError("unsupported_content",
+                                        "Instagram posts with several photos or videos (carousels) are not supported. "
+                                        "Paste a link to a single-video post or a reel.")
         if not isinstance(raw, dict) or raw.get("_type", "video") != "video":
             raise VideoUnavailableError("unsupported_content", "That link does not point to a single video.")
-        if raw.get("id") != ref.video_id:
+        # Instagram reports long (private-style) shortcodes by their short form.
+        raw_id = str(raw.get("id") or "")
+        same = raw_id == ref.video_id or (ref.platform == "instagram" and len(raw_id) >= 5
+                                          and ref.video_id.startswith(raw_id))
+        if not same:
             log.warning("provider returned id %s for %s", raw.get("id"), ref.video_id)
             raise VideoUnavailableError("video_unavailable", "This video is unavailable.")
 
@@ -223,6 +256,11 @@ class YtDlpProvider(MediaProvider):
                 continue
             vcodec = f.get("vcodec")
             acodec = f.get("acodec")
+            if ref.platform == "instagram" and f.get("ext") == "mp4" and f.get("width") and vcodec is None:
+                # Instagram's progressive MP4s often carry no codec info; they are H.264 with AAC
+                # audio (acodec "none" is kept when Instagram says there is no audio).
+                vcodec = "avc1"
+                acodec = "mp4a" if acodec is None else acodec
             vcodec = None if vcodec in (None, "none") else vcodec
             acodec = None if acodec in (None, "none") else acodec
             note = f.get("format_note") or ""
@@ -253,20 +291,28 @@ class YtDlpProvider(MediaProvider):
         if not formats and drm_count:
             raise VideoUnavailableError("drm_protected", "This video is DRM-protected and cannot be downloaded.")
 
+        allowed_thumb = _ALLOWED_THUMB_HOSTS[ref.platform]
         thumbs = [
             Thumbnail(url=t["url"], width=t.get("width"), height=t.get("height"))
             for t in raw.get("thumbnails") or []
-            if isinstance(t.get("url"), str) and _ALLOWED_THUMB_HOSTS.match(t["url"])
+            if isinstance(t.get("url"), str) and allowed_thumb.match(t["url"])
         ]
         thumb_url = raw.get("thumbnail") if isinstance(raw.get("thumbnail"), str) else None
-        if thumb_url and not _ALLOWED_THUMB_HOSTS.match(thumb_url):
+        if thumb_url and not allowed_thumb.match(thumb_url):
             thumb_url = None
-        if not thumb_url:
+        if not thumb_url and ref.platform == "youtube":
             thumb_url = f"https://i.ytimg.com/vi/{ref.video_id}/hqdefault.jpg"
+        elif not thumb_url and thumbs:
+            thumb_url = thumbs[-1].url
 
         captions, original_language = self._captions(raw)
         duration = raw.get("duration")
         width, height = raw.get("width"), raw.get("height")
+        if not (width and height):
+            sized = [f for f in formats if f.vcodec and f.width and f.height]
+            if sized:
+                biggest = max(sized, key=lambda f: f.width * f.height)  # type: ignore[operator]
+                width, height = biggest.width, biggest.height
         is_short = ref.is_short or bool(
             duration and duration <= 180 and width and height and height > width
         )
@@ -283,6 +329,7 @@ class YtDlpProvider(MediaProvider):
             original_language=original_language,
             live_status=raw.get("live_status"),
             webpage_url=ref.canonical_url,
+            platform=ref.platform,
             raw=raw,
         )
 
@@ -355,7 +402,7 @@ class YtDlpProvider(MediaProvider):
                 "outtmpl": {"default": str(dest_dir).replace("%", "%%") + f"/{stem}.%(ext)s"},
                 "progress_hooks": [hook],
             }
-            with self._ydl(opts) as ydl:
+            with self._ydl(opts, platform=info.platform) as ydl:
                 ydl.process_ie_result(copy.deepcopy(raw), download=True)
 
         raw = info.raw
@@ -371,11 +418,12 @@ class YtDlpProvider(MediaProvider):
                 log.warning("download of %s/%s failed (attempt %d): %s", info.video_id, format_id, attempt, exc)
                 # Stream URLs expire after a few hours; re-extract once and retry.
                 if attempt == 1 and re.search(r"HTTP Error 403|expired", str(exc), re.I):
+                    ref = VideoRef(info.video_id, platform=info.platform)  # type: ignore[arg-type]
                     with self._cache_lock:
-                        self._info_cache.pop(info.video_id, None)
-                    raw = await self._extract_raw(VideoRef(info.video_id))
+                        self._info_cache.pop(ref.cache_key, None)
+                    raw = await self._extract_raw(ref)
                     continue
-                raise map_provider_error(exc) from None
+                raise map_provider_error(exc, info.platform) from None
 
         files = [p for p in dest_dir.glob(f"{stem}.*") if not p.name.endswith((".part", ".ytdl"))]
         if not files:
@@ -403,7 +451,7 @@ class YtDlpProvider(MediaProvider):
                 "subtitlesformat": _CAPTION_FORMAT_PREF,
                 "outtmpl": {"default": prefix + "/captions.%(ext)s", "subtitle": prefix + "/captions.%(ext)s"},
             }
-            with self._ydl(opts) as ydl:
+            with self._ydl(opts, platform=info.platform) as ydl:
                 ydl.process_ie_result(copy.deepcopy(info.raw), download=True)
 
         try:
@@ -414,7 +462,7 @@ class YtDlpProvider(MediaProvider):
             raise AppError("timeout", "Downloading captions timed out.", 504) from None
         except (DownloadError, ExtractorError) as exc:
             log.warning("caption download failed for %s/%s: %s", info.video_id, track.key, exc)
-            raise map_provider_error(exc) from None
+            raise map_provider_error(exc, info.platform) from None
 
         files = [p for p in dest_dir.glob("captions.*") if not p.name.endswith((".part", ".ytdl"))]
         if not files:

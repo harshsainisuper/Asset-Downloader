@@ -27,6 +27,7 @@ export interface CaptionTrackInfo {
 
 export interface VideoInfo {
   video_id: string;
+  platform: "youtube" | "instagram";
   title: string;
   channel: string | null;
   duration: number | null;

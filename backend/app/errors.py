@@ -41,7 +41,30 @@ class CancelledByUser(Exception):
     """Raised inside workers when a task was cancelled."""
 
 
-# Ordered (pattern, code, message). The first match wins.
+_BLOCKED = {
+    "youtube": "YouTube is blocking requests from this server's network (bot check or rate limit). "
+               "The server administrator can fix this with YouTube cookies, a PO-token provider or a "
+               "proxy (README: \"YouTube bot checks\").",
+    "instagram": "Instagram wants a login for this post, or is rate-limiting this server. Try again in a few "
+                 "minutes; the server administrator can also add Instagram cookies (README: \"Instagram\").",
+}
+
+# Checked before the shared rules for Instagram links. Ordered; the first match wins.
+_INSTAGRAM_RULES: list[tuple[re.Pattern[str], str, str]] = [
+    (re.compile(r"no video in this post", re.I),
+     "no_video", "This Instagram post has no video. Only posts and reels that contain a video are supported."),
+    (re.compile(r"who follow this account|private account", re.I),
+     "video_private", "This post is from a private Instagram account and is not supported."),
+    (re.compile(r"restricted video", re.I),
+     "age_restricted", "This Instagram video is restricted to signed-in adults and is not supported."),
+    (re.compile(r"login|log in|registered users|rate.?limit|not granting access|empty media response|"
+                r"HTTP Error 429|HTTP Error 401|too many requests", re.I),
+     "provider_blocked", _BLOCKED["instagram"]),
+    (re.compile(r"HTTP Error 404|does not exist|page not found|unavailable", re.I),
+     "video_unavailable", "This Instagram post is unavailable. It may have been deleted, or the link is wrong."),
+]
+
+# Ordered (pattern, code, message). The first match wins. "{site}" is the platform name.
 _PROVIDER_ERROR_RULES: list[tuple[re.Pattern[str], str, str]] = [
     (re.compile(r"private video|this video is private", re.I),
      "video_private", "This video is private. Only videos you can watch publicly are supported."),
@@ -63,10 +86,7 @@ _PROVIDER_ERROR_RULES: list[tuple[re.Pattern[str], str, str]] = [
     (re.compile(r"not a bot|sign in to confirm|HTTP Error 429|too many requests|rate.?limit|"
                 r"failed to extract any player response|player responses are invalid|"
                 r"ip is likely being blocked", re.I),
-     "provider_blocked",
-     "YouTube is blocking requests from this server's network (bot check or rate limit). "
-     "The server administrator can fix this with YouTube cookies, a PO-token provider or a "
-     "proxy (README: \"YouTube bot checks\")."),
+     "provider_blocked", _BLOCKED["youtube"]),
     (re.compile(r"requested format is not available|no video formats found", re.I),
      "format_unavailable", "The requested format is not available for this video."),
     (re.compile(r"video unavailable|this video is unavailable|does not exist|incomplete youtube id|"
@@ -75,18 +95,22 @@ _PROVIDER_ERROR_RULES: list[tuple[re.Pattern[str], str, str]] = [
     (re.compile(r"timed out|timeout|connection reset|temporary failure in name resolution|"
                 r"network is unreachable|unable to download (webpage|api page)|unable to connect|"
                 r"proxy ?error|HTTP Error 5\d\d", re.I),
-     "network_error", "Could not reach YouTube. Check the server's internet connection and try again."),
+     "network_error", "Could not reach {site}. Check the server's internet connection and try again."),
     (re.compile(r"max_filesize|larger than max-filesize|file is larger than", re.I),
      "file_too_large", "The file exceeds the configured maximum size."),
 ]
 
 
-def map_provider_error(exc: BaseException) -> AppError:
+def map_provider_error(exc: BaseException, platform: str = "youtube") -> AppError:
     """Translate a provider exception into a safe AppError."""
     if isinstance(exc, AppError):
         return exc
     text = str(exc)
-    for pattern, code, message in _PROVIDER_ERROR_RULES:
+    site = "Instagram" if platform == "instagram" else "YouTube"
+    rules = (_INSTAGRAM_RULES if platform == "instagram" else []) + _PROVIDER_ERROR_RULES
+    for pattern, code, message in rules:
         if pattern.search(text):
-            return AppError(code, message, 422)
-    return AppError("provider_error", "YouTube could not provide this media. Please try again later.", 502)
+            if code == "provider_blocked":
+                message = _BLOCKED.get(platform, message)
+            return AppError(code, message.replace("{site}", site), 422)
+    return AppError("provider_error", f"{site} could not provide this media. Please try again later.", 502)

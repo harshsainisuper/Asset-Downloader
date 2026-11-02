@@ -48,7 +48,7 @@ export function outputProblem(kind: OutputKind, info: VideoInfo, settings: Outpu
 }
 
 export function canProcess(info: VideoInfo | null, selection: Selection, settings: OutputSettings, urlValid: boolean) {
-  if (!urlValid || !info) return { ok: false, reason: "Fetch a valid YouTube video first." };
+  if (!urlValid || !info) return { ok: false, reason: "Fetch a valid YouTube or Instagram video first." };
   const kinds = selectedKinds(selection);
   if (kinds.length === 0) return { ok: false, reason: "Select at least one output." };
   for (const kind of kinds) {

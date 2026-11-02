@@ -1,6 +1,6 @@
 import { type FormEvent, useMemo, useState } from "react";
-import { ClipboardPaste, Clock, ImageOff, Link2, LoaderCircle, Search, Smartphone, User, X } from "lucide-react";
-import { checkYoutubeUrl } from "../lib/youtube";
+import { ClipboardPaste, Clock, Camera, ImageOff, Link2, LoaderCircle, Search, Smartphone, User, X } from "lucide-react";
+import { checkMediaUrl } from "../lib/mediaUrl";
 import { formatDuration } from "../lib/format";
 import type { VideoInfo } from "../lib/types";
 import { Note, SectionTitle, cn } from "./ui";
@@ -15,7 +15,7 @@ interface Props {
 }
 
 export function UrlPanel({ url, onUrlChange, onFetch, loading, error, info }: Props) {
-  const check = useMemo(() => checkYoutubeUrl(url), [url]);
+  const check = useMemo(() => checkMediaUrl(url), [url]);
   const showInvalid = !check.ok && check.reason !== "";
 
   const submit = (e: FormEvent) => {
@@ -34,7 +34,7 @@ export function UrlPanel({ url, onUrlChange, onFetch, loading, error, info }: Pr
 
   return (
     <section className="panel">
-      <SectionTitle step={1} title="Paste a YouTube link" />
+      <SectionTitle step={1} title="Paste a YouTube or Instagram link" />
       <form onSubmit={submit} className="flex flex-col gap-3 sm:flex-row">
         <div className="relative flex-1">
           <Link2 className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-zinc-500" />
@@ -46,8 +46,8 @@ export function UrlPanel({ url, onUrlChange, onFetch, loading, error, info }: Pr
             maxLength={2048}
             value={url}
             onChange={(e) => onUrlChange(e.target.value)}
-            placeholder="https://www.youtube.com/watch?v=…  ·  youtu.be/…  ·  /shorts/…"
-            aria-label="YouTube URL"
+            placeholder="youtube.com/watch?v=…  ·  youtu.be/…  ·  instagram.com/reel/…"
+            aria-label="YouTube or Instagram URL"
             aria-invalid={showInvalid}
             className={cn(
               "w-full rounded-xl border bg-ink-850 py-3 pr-20 pl-10 text-sm text-zinc-100 outline-none placeholder:text-zinc-600",
@@ -124,9 +124,14 @@ function VideoPreview({ info }: { info: VideoInfo }) {
               <Clock className="size-3.5" /> {formatDuration(info.duration)}
             </span>
           )}
+          {info.platform === "instagram" && (
+            <span className="inline-flex items-center gap-1.5 text-pink-400">
+              <Camera className="size-3.5" /> Instagram
+            </span>
+          )}
           {info.is_short && (
             <span className="inline-flex items-center gap-1.5 text-accent-400">
-              <Smartphone className="size-3.5" /> Short
+              <Smartphone className="size-3.5" /> {info.platform === "instagram" ? "Reel" : "Short"}
             </span>
           )}
         </div>

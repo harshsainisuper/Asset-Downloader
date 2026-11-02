@@ -1,7 +1,7 @@
 import pytest
 
 from app.errors import InvalidUrlError
-from app.url_validation import parse_youtube_url
+from app.url_validation import parse_media_url
 
 ID = "dQw4w9WgXcQ"
 
@@ -27,7 +27,7 @@ ID = "dQw4w9WgXcQ"
     ],
 )
 def test_valid_urls_are_normalized(url, expected_short):
-    ref = parse_youtube_url(url)
+    ref = parse_media_url(url)
     assert ref.video_id == ID
     assert ref.is_short is expected_short
     assert ref.canonical_url == f"https://www.youtube.com/watch?v={ID}"
@@ -65,9 +65,60 @@ def test_valid_urls_are_normalized(url, expected_short):
 )
 def test_invalid_urls_are_rejected(url):
     with pytest.raises(InvalidUrlError):
-        parse_youtube_url(url)
+        parse_media_url(url)
 
 
 def test_non_string_rejected():
     with pytest.raises(InvalidUrlError):
-        parse_youtube_url(None)  # type: ignore[arg-type]
+        parse_media_url(None)  # type: ignore[arg-type]
+
+
+IG = "C9xYz_AbC-1"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        f"https://www.instagram.com/p/{IG}/",
+        f"https://www.instagram.com/reel/{IG}/?igsh=abc123",
+        f"https://instagram.com/reels/{IG}",
+        f"https://www.instagram.com/tv/{IG}/",
+        f"https://www.instagram.com/some.user/reel/{IG}/",
+        f"https://m.instagram.com/p/{IG}",
+        f"instagram.com/reel/{IG}",
+        f"https://instagr.am/p/{IG}/",
+    ],
+)
+def test_instagram_urls_are_normalized(url):
+    ref = parse_media_url(url)
+    assert (ref.platform, ref.video_id) == ("instagram", IG)
+    assert ref.canonical_url == f"https://www.instagram.com/p/{IG}/"
+    assert ref.cache_key == f"instagram:{IG}"
+
+
+def test_youtube_refs_keep_their_platform():
+    ref = parse_media_url(f"https://youtu.be/{ID}")
+    assert ref.platform == "youtube" and ref.cache_key == f"youtube:{ID}"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.instagram.com/",
+        "https://www.instagram.com/some.user/",
+        f"https://www.instagram.com/{IG}/",  # a single segment is a profile, not a post
+        "https://www.instagram.com/stories/some.user/3141592653589793238/",
+        "https://www.instagram.com/share/reel/BAbc123/",
+        "https://www.instagram.com/explore/tags/cats/",
+        "https://www.instagram.com/p/abc/",  # too short
+        "https://www.instagram.com/p/bad$code/",
+        f"https://www.instagram.com/p/{IG}/extra/more",
+        f"https://instagram.com.evil.com/p/{IG}/",
+        f"https://evil.com/instagram.com/p/{IG}/",
+        f"https://user:pw@www.instagram.com/p/{IG}/",
+        f"https://www.instagram.com:8443/p/{IG}/",
+    ],
+)
+def test_invalid_instagram_urls_are_rejected(url):
+    with pytest.raises(InvalidUrlError):
+        parse_media_url(url)

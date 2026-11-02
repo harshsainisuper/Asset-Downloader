@@ -241,9 +241,9 @@ function AudioOptions({ info, value, onChange }: { info: VideoInfo; value: Audio
       )}
       <Note>
         {value.format === "m4a"
-          ? "Keeps the original AAC stream when YouTube provides one (no quality loss)."
+          ? "Keeps the original AAC stream when the site provides one (no quality loss)."
           : `Converted from ${source}. `}
-        {value.format !== "m4a" && "YouTube audio is already lossy: WAV or a higher MP3 bitrate cannot restore lost detail; WAV just stores it uncompressed."}
+        {value.format !== "m4a" && "The source audio is already lossy: WAV or a higher MP3 bitrate cannot restore lost detail; WAV just stores it uncompressed."}
       </Note>
     </>
   );
@@ -295,7 +295,7 @@ function TranscriptOptions({ info, value, onChange }: { info: VideoInfo; value: 
           </select>
         </div>
       ) : (
-        <Note tone="warn">This video has no captions on YouTube.</Note>
+        <Note tone="warn">This video has no captions.</Note>
       )}
       <div>
         <span className="field-label">Export formats</span>

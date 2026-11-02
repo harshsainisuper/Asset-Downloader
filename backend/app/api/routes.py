@@ -12,7 +12,7 @@ from ..media.pot_provider import ping as pot_ping
 from ..media.provider import MediaProvider
 from ..schemas import CancelRequest, InfoRequest, JobCreateRequest, ZipRequest
 from ..security import RateLimiter, client_ip, verify_download
-from ..url_validation import parse_youtube_url
+from ..url_validation import parse_media_url
 from .serializers import file_payload, info_payload, job_payload
 
 log = logging.getLogger(__name__)
@@ -69,7 +69,7 @@ async def config(request: Request) -> dict:
 
 
 async def _fetch_info(request: Request, url: str):
-    ref = parse_youtube_url(url)
+    ref = parse_media_url(url)
     info = await _provider(request).fetch_info(ref)
     settings = request.app.state.settings
     if info.duration and info.duration > settings.max_duration_seconds:

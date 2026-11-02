@@ -72,6 +72,7 @@ class VideoInfo:
     original_language: str | None = None
     live_status: str | None = None
     webpage_url: str = ""
+    platform: str = "youtube"
     # Opaque provider payload needed to download without re-extracting.
     raw: Any = None
 

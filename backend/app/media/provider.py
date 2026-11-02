@@ -1,6 +1,6 @@
 """Abstract media provider.
 
-All YouTube access goes through this interface so the yt-dlp based implementation
+All YouTube and Instagram access goes through this interface so the yt-dlp based implementation
 can be swapped for an authorized/official provider without touching the job,
 format-planning, FFmpeg or transcript code.
 """

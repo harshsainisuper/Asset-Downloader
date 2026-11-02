@@ -176,7 +176,7 @@ function YouTubeAccess({ provider }: { provider: ServerConfig["provider"] }) {
       <Status
         ok={!!provider.cookies_configured}
         warn={!provider.cookies_configured}
-        label="YouTube cookies"
+        label="Cookies (YouTube / Instagram)"
         detail={
           provider.cookies_configured
             ? "Configured"

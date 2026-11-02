@@ -1,6 +1,6 @@
 # YT Media Toolkit
 
-A self-hosted web app that takes a YouTube video or Shorts URL and produces exactly the outputs you select:
+A self-hosted web app that takes a YouTube video or Shorts URL, or an Instagram post or reel URL, and produces exactly the outputs you select:
 
 | Output | What you get |
 |---|---|
@@ -286,6 +286,14 @@ Optional: `YTDLP_PLAYER_CLIENTS` (e.g. `mweb`) overrides which YouTube client yt
 
 Also keep yt-dlp current. Each Render redeploy installs the latest `yt-dlp` allowed by `requirements.txt`, so **Manual Deploy → Clear build cache & deploy** picks up fixes.
 
+### Instagram
+
+Paste a post or reel link (`instagram.com/p/…`, `/reel/…`, `/reels/…`, `/tv/…`, also with a `/username/` prefix). Video, audio and thumbnail work the same as for YouTube. Instagram has no captions, so **Transcript** is only available through the AI fallback (see Speech-to-text).
+
+- **Without cookies** public posts and reels usually work from a home connection. Instagram limits anonymous viewing per IP, so after many requests in a short time, or from a cloud server, you get *"Instagram wants a login for this post, or is rate-limiting this server"*. Wait a few minutes, or add cookies.
+- **Cookies:** the same cookies file is used for both sites. Sign in to instagram.com with a **secondary** account in a private window, export the cookies for `instagram.com` in Netscape format, and append them to your `cookies.txt` (or use them alone if you don't need YouTube cookies). On Render, update the `cookies.txt` Secret File; at home, set `YTDLP_COOKIES_FILE` in `.env`.
+- **Not supported:** carousel posts with several photos or videos, photo-only posts, stories, private accounts, and `instagram.com/share/…` links. For share links, open the link and copy the post's address from the browser.
+
 ---
 
 ## Speech-to-text (AI transcript fallback)
@@ -321,7 +329,7 @@ Check the status under **Settings → Server status**.
 
 ## Behaviour details & limitations
 
-- **Supported URLs:** `youtube.com/watch?v=`, `m.`/`music.` subdomains, `youtu.be/`, `/shorts/`, `/embed/`, `/live/` (finished streams), `youtube-nocookie.com/embed/`. Playlists, channels and other domains are rejected.
+- **Supported URLs:** `youtube.com/watch?v=`, `m.`/`music.` subdomains, `youtu.be/`, `/shorts/`, `/embed/`, `/live/` (finished streams), `youtube-nocookie.com/embed/`; Instagram `/p/`, `/reel/`, `/reels/`, `/tv/` links on `instagram.com` and `instagr.am`. Playlists, channels, profiles, stories and other domains are rejected.
 - **Not supported:** private, members-only and Premium-only videos (unless the optional cookie account has access), DRM-protected (purchased/rented) videos, active live streams and upcoming premieres. Age-restricted videos need a signed-in, age-verified account via the optional cookies. The app never circumvents DRM, paywalls or private-content restrictions. These cases produce clear error messages.
 - **Video quality:** YouTube labels quality by the short side (a vertical 1080×1920 Short is "1080p"). Above 1080p, YouTube usually offers only VP9/AV1:
   - **WebM** keeps the original VP9/AV1 + Opus streams (no re-encoding).
@@ -336,7 +344,7 @@ Check the status under **Settings → Server status**.
 
 ## Security notes
 
-- URLs are validated and normalized server-side. Only the 11-character video ID is kept, and yt-dlp only ever receives `https://www.youtube.com/watch?v=<id>` with its extractor restricted to `youtube`. Thumbnails are fetched only from `https://i*.ytimg.com` without following redirects. Together these block SSRF.
+- URLs are validated and normalized server-side. Only the video ID (or Instagram shortcode) is kept, and yt-dlp only ever receives `https://www.youtube.com/watch?v=<id>` or `https://www.instagram.com/p/<code>/` with its extractors restricted to `youtube` or `Instagram` respectively. Thumbnails are fetched only from `https://i*.ytimg.com` or Instagram's CDN (`*.cdninstagram.com`, `*.fbcdn.net`) without following redirects. Together these block SSRF.
 - Optional `ACCESS_PASSWORD` puts the whole app (UI, API, downloads) behind a browser login (HTTP Basic auth, any username). Repeated wrong passwords are rate-limited. Always set it when the app is reachable from the internet. `/api/health` stays open for container health checks.
 - No shell is used anywhere. FFmpeg and FFprobe run with argument arrays.
 - Each job returns a random access token. Job status, cancel, ZIP and delete require it via the `X-Job-Token` header. Missing jobs and wrong tokens give the same 404.
@@ -370,4 +378,4 @@ Check the status under **Settings → Server status**.
 
 ## Legal
 
-This tool is for content you own, have licensed, or may otherwise lawfully download (e.g. Creative Commons or your own uploads). Downloading may violate YouTube's Terms of Service and copyright law in other cases; you are responsible for how you use it. The app does not bypass DRM, paywalls or private-content restrictions. With optional cookies it acts as that signed-in account and can only access what the account itself may watch. Automated access can lead YouTube to restrict the account, which is why a secondary account is recommended.
+This tool is for content you own, have licensed, or may otherwise lawfully download (e.g. Creative Commons or your own uploads). Downloading may violate YouTube's or Instagram's terms and copyright law in other cases; you are responsible for how you use it. The app does not bypass DRM, paywalls or private-content restrictions. With optional cookies it acts as that signed-in account and can only access what the account itself may watch. Automated access can lead YouTube to restrict the account, which is why a secondary account is recommended.
