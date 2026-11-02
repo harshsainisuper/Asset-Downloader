@@ -166,7 +166,7 @@ There are two ways to run it: **without Docker** (simplest, recommended on Windo
 
 ### Without Docker (Windows: double-click)
 
-1. Download the code. Either click **Code → Download ZIP** on GitHub and extract it, or run `git clone https://github.com/harshsainisuper/yt-media-toolkit.git`.
+1. Download the code. Either click **Code → Download ZIP** on GitHub and extract it, or run `git clone https://github.com/harshsainisuper/Asset-Downloader.git`.
 2. Double-click **`start-windows.bat`** in the extracted folder.
    - The first run installs whatever is missing with Windows' built-in `winget`: Python 3.13, FFmpeg, and Node.js (needed once, to build the web page). It then installs the Python packages and builds the interface. This takes about 5–10 minutes; accept any Windows installer prompts.
    - When it prints `Ready: http://localhost:8000`, your browser opens the app. Keep the black window open while you use it, and close it (or press Ctrl+C) to stop.
@@ -189,8 +189,8 @@ Works on Intel/AMD and ARM (Apple Silicon, Raspberry Pi 4/5 with a 64-bit OS).
 #### 2. Get the code and settings
 
 ```bash
-git clone https://github.com/harshsainisuper/yt-media-toolkit.git
-cd yt-media-toolkit
+git clone https://github.com/harshsainisuper/Asset-Downloader.git
+cd Asset-Downloader
 cp .env.example .env          # Windows (cmd/PowerShell): copy .env.example .env
 ```
 
