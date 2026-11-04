@@ -166,6 +166,10 @@ There are two ways to run it: **without Docker** (simplest, recommended on Windo
 
 ### Without Docker (Windows: double-click)
 
+**Easiest:** download only [`Asset-Downloader.bat`](https://github.com/harshsainisuper/Asset-Downloader/raw/main/Asset-Downloader.bat) (on GitHub: open the file → **Download raw file**), put it anywhere, e.g. on the desktop, and double-click it. It downloads the app into `%LOCALAPPDATA%\AssetDownloader`, then does the same as `start-windows.bat` below. Each later start checks GitHub and installs a newer version if there is one, keeping your `.env` and installed packages. For a public link, run `Asset-Downloader.bat --tunnel` from a Command Prompt.
+
+Or download the whole project:
+
 1. Download the code. Either click **Code → Download ZIP** on GitHub and extract it, or run `git clone https://github.com/harshsainisuper/Asset-Downloader.git`.
 2. Double-click **`start-windows.bat`** in the extracted folder.
    - The first run installs whatever is missing with Windows' built-in `winget`: Python 3.13, FFmpeg, and Node.js (needed once, to build the web page). It then installs the Python packages and builds the interface. This takes about 5–10 minutes; accept any Windows installer prompts.
